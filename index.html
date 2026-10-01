@@ -48,6 +48,9 @@ input, textarea { font: inherit; color: var(--ink); }
 
 .top { position: sticky; top: 0; z-index: 5; background: var(--page); display: flex; align-items: center; gap: 8px; padding: calc(14px + var(--safe-top)) 16px 10px; }
 .top h1 { font-size: 18px; font-weight: 600; margin: 0; flex: 1; }
+.title-btn { font-size: 18px; font-weight: 600; display: inline-flex; align-items: center; gap: 2px; padding: 4px 6px; margin-left: -6px; border-radius: 8px; }
+.title-btn:active { background: var(--line); }
+.title-btn svg { width: 16px; height: 16px; color: var(--muted); }
 .status { font-size: 12px; color: var(--muted); }
 .icon-btn { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; color: var(--sub); }
 .icon-btn:active { background: var(--line); }
@@ -146,7 +149,7 @@ input, textarea { font: inherit; color: var(--ink); }
 .v-block .reply { font-size: 13px; color: var(--sub); border-left: 2px solid var(--line-strong); padding-left: 8px; margin-top: 6px; }
 .v-cancel { background: var(--cancel-bg); color: var(--cancel); border-radius: 10px; padding: 10px 12px; font-size: 14px; font-weight: 600; margin-top: 10px; }
 
-.menu { position: absolute; right: 12px; top: calc(52px + var(--safe-top)); z-index: 20; min-width: 240px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.14); padding: 6px; display: none; }
+.menu { position: absolute; left: 12px; top: calc(52px + var(--safe-top)); z-index: 20; min-width: 240px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.14); padding: 6px; display: none; }
 .menu.open { display: block; }
 .menu button { display: block; width: 100%; text-align: left; padding: 10px 12px; border-radius: 8px; }
 .menu button:active { background: var(--line); }
@@ -190,6 +193,7 @@ input, textarea { font: inherit; color: var(--ink); }
 .overlay.peek { display: none; }
 .col.drop-over { outline: 3px dashed var(--c-ink); outline-offset: -3px; }
 .trash-btn svg { width: 23px; height: 23px; }
+#trashBtn { margin-right: 18px; }   /* ↶ と並ぶと押し間違えるので離す */
 .small-btn { font-size: 13px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line-strong); white-space: nowrap; }
 .small-btn.del { color: var(--danger); border-color: transparent; }
 .note { font-size: 12px; color: var(--muted); margin: 6px 0 4px; }
@@ -220,7 +224,7 @@ input, textarea { font: inherit; color: var(--ink); }
   .col-head { display: flex; }
   .overlay { align-items: center; }
   .sheet { border-radius: 18px; }
-  .menu { right: 20px; }
+  .menu { left: 20px; }
 }
 </style>
 </head>
@@ -247,7 +251,7 @@ setTimeout(function () {
 <script src="config.js"></script>
 
 <header class="top" id="topBar" hidden>
-  <h1>Myタスク</h1>
+  <h1><button class="title-btn" id="titleBtn" aria-label="アカウント">Myタスク<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10l5 5 5-5"/></svg></button></h1>
   <span class="status" id="status"></span>
   <button class="icon-btn trash-btn" id="trashBtn" aria-label="ゴミ箱" title="ゴミ箱"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9.5 7V4.8h5V7"/><path d="M6.5 7l.9 12.2a1.6 1.6 0 0 0 1.6 1.5h6a1.6 1.6 0 0 0 1.6-1.5L17.5 7"/><path d="M10.2 11v6M13.8 11v6"/></svg></button>
   <button class="icon-btn hist off" id="undoBtn" aria-label="元に戻す" title="元に戻す"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="arc-out" d="M8.3 7.9A6.8 6.8 0 1 1 10.1 18.7"/><path class="arc-in" d="M8.3 7.9A6.8 6.8 0 1 1 10.1 18.7"/><path class="head" d="M3.8 2.4L2.5 11.6L11.5 10.3Z"/></svg></button>
@@ -255,15 +259,10 @@ setTimeout(function () {
   <button class="icon-btn" id="addTop" aria-label="タスクを追加">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
   </button>
-  <button class="icon-btn" id="menuBtn" aria-label="メニュー">
-    <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
-  </button>
 </header>
 <div class="menu" id="menu">
-  <button id="mCsv">CSVで書き出す</button>
-  <button id="mReload">最新の状態にする</button>
+  <div class="foot" id="mFoot" style="border-top:0;margin-top:0"></div>
   <button id="mLogout">ログアウト</button>
-  <div class="foot" id="mFoot"></div>
 </div>
 <nav class="tabs" id="tabs" hidden></nav>
 <main class="board" id="board"><div class="loading">読み込み中…</div></main>
@@ -592,22 +591,24 @@ function buildColumns() {
     form.appendChild(input);
     form.appendChild(ok);
     addBtn.onclick = function () { openAdd(c.id); };
+    // 連続入力：入力欄は、フォーカスが外れても閉じない（閉じるのは、空のまま欄の外を触ったときだけ）。
+    // 日本語の変換中に「追加」を押したら、変換が確定してから追加する（変換中に欄を空にするとiPhoneで入力が壊れる）
+    var composing = false, submitAfterCompose = false;
     var submitAdd = function () {
+      if (composing) { submitAfterCompose = true; return; }
       var title = input.value.replace(/\s+/g, ' ').trim();
       if (title) { input.value = ''; addTask(c.id, title); }
       reopenAdd(c.id);
       input.focus();
     };
+    input.addEventListener('compositionstart', function () { composing = true; });
+    input.addEventListener('compositionend', function () {
+      composing = false;
+      if (submitAfterCompose) { submitAfterCompose = false; setTimeout(submitAdd, 0); }
+    });
     form.onsubmit = function (e) { e.preventDefault(); submitAdd(); };
-    // 「追加」を押した瞬間に入力欄から外れると、欄が閉じてキーボードも下がる。押しても外れないようにする
-    ok.addEventListener('mousedown', function (e) { e.preventDefault(); });
-    ok.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
-    ok.addEventListener('touchend', function (e) { e.preventDefault(); submitAdd(); });
     ok.addEventListener('click', function (e) { e.preventDefault(); submitAdd(); });
     input.onkeydown = function (e) { if (e.key === 'Escape') closeAdd(c.id); };
-    input.onblur = function () {
-      setTimeout(function () { if (!input.value.trim() && document.activeElement !== input) closeAdd(c.id); }, 150);
-    };
     col.appendChild(addBtn);
     col.appendChild(form);
     board.appendChild(col);
@@ -732,6 +733,18 @@ function openAdd(col) {
   c.querySelector('.add-form').classList.add('open');
   c.querySelector('.add-form input').focus();
 }
+/** 空のまま欄の外を触ったら、開いている入力欄を閉じる */
+function closeAddIfOutside(e) {
+  Array.prototype.forEach.call(document.querySelectorAll('.add-form.open'), function (form) {
+    var col = form.closest('.col');
+    if (form.contains(e.target) || col.querySelector('.add').contains(e.target)) return;
+    if (e.target.closest && e.target.closest('#addTop')) return;
+    if (form.querySelector('input').value.trim()) return;
+    closeAdd(col.dataset.col);
+  });
+}
+document.addEventListener('touchstart', closeAddIfOutside, { capture: true, passive: true });
+document.addEventListener('mousedown', closeAddIfOutside, true);
 function closeAdd(col) {
   var c = document.querySelector('.col[data-col="' + col + '"]');
   c.querySelector('.add').style.display = '';
@@ -1419,32 +1432,6 @@ document.addEventListener('touchend', endTrashDrag);
 document.addEventListener('touchcancel', function () { if (tdrag && tdrag.active) tdrag.over = null; endTrashDrag(); });
 document.addEventListener('mouseup', endTrashDrag);
 
-// ---- CSV ----
-function exportCsv() {
-  var rows = [['状態', '列', 'タイトル', '期限', 'メモ', '作成日', '完了日', '削除日']];
-  var order = COLS.map(function (c) { return c.id; });
-  state.tasks.slice().sort(function (a, b) {
-    var ta = a.done || a.deleted ? 1 : 0, tb = b.done || b.deleted ? 1 : 0;
-    return ta - tb || order.indexOf(a.col) - order.indexOf(b.col) || a.ord - b.ord;
-  }).forEach(function (t) {
-    rows.push([t.deleted ? '削除' : t.done ? '完了' : '', colName(t.col), t.title, t.due || '', t.memo || '', (t.created || '').slice(0, 10),
-      t.done ? ymd(new Date(t.done)) : '', t.deleted ? ymd(new Date(t.deleted)) : '']);
-  });
-  var csv = '﻿' + rows.map(function (r) {
-    return r.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(',');
-  }).join('\r\n');
-  try {
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-    a.download = 'タスク_' + ymd(new Date()) + '.csv';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  } catch (e) {
-    toast('書き出せませんでした');
-  }
-}
-
 // ---- トースト ----
 var toastTimer = null;
 function toast(msg, actLabel, actFn) {
@@ -1511,15 +1498,9 @@ document.addEventListener('touchmove', function (e) {
 
 // ---- つなぎ込み ----
 $('addTop').onclick = function () { openAdd(mobileMq.matches && state.active !== 'plan' ? state.active : 'now'); };
-$('menuBtn').onclick = function (e) { e.stopPropagation(); $('menu').classList.toggle('open'); };
+$('titleBtn').onclick = function (e) { e.stopPropagation(); $('menu').classList.toggle('open'); };
 document.addEventListener('click', function (e) { if (!$('menu').contains(e.target)) $('menu').classList.remove('open'); });
 $('trashBtn').onclick = openTrash;
-$('mCsv').onclick = function () { $('menu').classList.remove('open'); exportCsv(); };
-$('mReload').onclick = function () {
-  $('menu').classList.remove('open');
-  queue.then(load).then(function () { toast('最新の状態にしました'); });
-  if (plan.date) loadPlan(plan.date);
-};
 $('mLogout').onclick = function () { $('menu').classList.remove('open'); logout(); };
 $('trashClose').onclick = closeTrash;
 $('trashPanel').onclick = function (e) { if (e.target === this) closeTrash(); };
