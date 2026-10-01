@@ -37,7 +37,7 @@
   [data-col="plan"]    { --c-bg: #26222e; --c-pill: #46345f; --c-ink: #ddcdf3; --c-add: #b99be3; }
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--page); color: var(--ink); }
+html, body { margin: 0; background: var(--page); color: var(--ink); overscroll-behavior: none; }   /* 上に引っぱっても画面が下がらないように */
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", sans-serif;
   font-size: 15px; line-height: 1.5; -webkit-text-size-adjust: 100%;
@@ -836,7 +836,6 @@ function setDone(id, done) {
   t.done = done ? new Date().toISOString() : null;
   if (!done) t.ord = activeTasks(t.col).length ? activeTasks(t.col).slice(-1)[0].ord + 1 : 0;
   render();
-  if (done) toast('完了にしました', '元に戻す', function () { setDone(t.id, false); });
   enqueue(function () { return api('setDone', { id: realId(t.id), done: done }); });
 }
 /** 削除：ゴミ箱へ入れる（30日で自動で消える） */
@@ -1682,23 +1681,26 @@ document.addEventListener('touchmove', function (e) {
   if (e.touches.length) trackDrag(e.touches[0].clientX, e.touches[0].clientY);
 }, { capture: true, passive: true });
 
-// ---- スマホ：左右スワイプで「今すぐ／次に／いつか／予定」を移動 ----
+// ---- スマホ：左右スワイプで「今すぐ／次に／いつか／予定」を移動（画面のどこでも） ----
 (function () {
   var sx = 0, sy = 0, tracking = false;
-  var board = $('board');
-  board.addEventListener('touchstart', function (e) {
-    if (e.touches.length !== 1) { tracking = false; return; }
+  document.addEventListener('touchstart', function (e) {
+    tracking = false;
+    if (e.touches.length !== 1 || !started || !mobileMq.matches || $('board').hidden) return;
+    var t = e.target;
+    if (t.closest && (t.closest('.overlay.open') || t.closest('.menu.open') || t.closest('input, textarea, select'))) return;
     tracking = true;
     sx = e.touches[0].clientX;
     sy = e.touches[0].clientY;
   }, { passive: true });
-  board.addEventListener('touchend', function (e) {
-    if (!tracking || dragging || vdrag || Date.now() - lastVisitDrag < 500 || !mobileMq.matches) return;
+  document.addEventListener('touchend', function (e) {
+    if (!tracking) return;
     tracking = false;
-    if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+    if (dragging || vdrag || tdrag || Date.now() - lastVisitDrag < 500) return;
+    if (document.activeElement && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
     var dx = e.changedTouches[0].clientX - sx;
     var dy = e.changedTouches[0].clientY - sy;
-    if (Math.abs(dx) < 70 || Math.abs(dy) > 50) return;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;   // 横に大きく動いたときだけ（縦のスクロールと区別）
     var i = TABS.map(function (c) { return c.id; }).indexOf(state.active);
     var next = i + (dx < 0 ? 1 : -1);
     if (next >= 0 && next < TABS.length) setActive(TABS[next].id);
