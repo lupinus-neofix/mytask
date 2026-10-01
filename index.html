@@ -65,7 +65,8 @@ input, textarea { font: inherit; color: var(--ink); }
 .tab .n { font-weight: 400; margin-left: 4px; }
 .tabs.dragging .tab { opacity: 1; border-style: dashed; border-color: var(--c-ink); transition: transform .12s; }
 .tabs.dragging .tab.active { border-style: solid; }
-.tabs.dragging .tab.drop-over { background: var(--c-ink); color: var(--c-pill); border-style: solid; transform: scale(1.06); }
+.tabs.dragging { overflow: visible; z-index: 100002; }   /* 持ち上げたカードより手前に出して、大きくなったタブを見せる */
+.tabs.dragging .tab.drop-over { background: var(--c-ink); color: var(--c-pill); border-style: solid; transform: scale(1.25); box-shadow: 0 6px 16px rgba(0,0,0,.18); position: relative; z-index: 1; }
 .tabs.dragging .tab[data-col="plan"] { opacity: .3; border-style: solid; border-color: transparent; }
 
 .board { padding: 0 16px 120px; }
@@ -173,9 +174,22 @@ input, textarea { font: inherit; color: var(--ink); }
 .btn.danger { flex: 0 0 auto; color: var(--danger); }
 .btn.danger.armed { background: var(--danger); color: #fff; border-color: var(--danger); }
 
-.done-item { display: flex; gap: 10px; align-items: flex-start; padding: 12px 2px; border-bottom: 1px solid var(--line); }
-.done-item .body .title { color: var(--sub); text-decoration: line-through; }
-.done-item .when { font-size: 12px; color: var(--muted); margin-top: 2px; }
+/* ゴミ箱 */
+.trash-day { font-size: 12px; font-weight: 600; color: var(--sub); margin: 16px 2px 4px; }
+.trash-item { display: flex; gap: 8px; align-items: center; padding: 10px 10px; margin-bottom: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.trash-item .body .title { color: var(--sub); }
+.trash-item.is-done .body .title { text-decoration: line-through; }
+.trash-item .when { font-size: 12px; color: var(--muted); margin-top: 2px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.trash-tag { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 5px; }
+.trash-tag.done { background: #e3f3e6; color: #2f7a3e; }
+.trash-tag.deleted { background: var(--danger-bg); color: var(--danger); }
+@media (prefers-color-scheme: dark) { .trash-tag.done { background: #20382a; color: #8fd6a1; } }
+.trash-item.lifted { opacity: .3; }
+.trash-ghost { position: fixed; z-index: 60; pointer-events: none; margin: 0; box-shadow: 0 10px 24px rgba(0,0,0,.2); background: var(--card); }
+.overlay.peek { display: none; }
+.col.drop-over { outline: 3px dashed var(--c-ink); outline-offset: -3px; }
+.trash-btn svg { width: 23px; height: 23px; }
 .small-btn { font-size: 13px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line-strong); white-space: nowrap; }
 .small-btn.del { color: var(--danger); border-color: transparent; }
 .note { font-size: 12px; color: var(--muted); margin: 6px 0 4px; }
@@ -235,6 +249,7 @@ setTimeout(function () {
 <header class="top" id="topBar" hidden>
   <h1>Myタスク</h1>
   <span class="status" id="status"></span>
+  <button class="icon-btn trash-btn" id="trashBtn" aria-label="ゴミ箱" title="ゴミ箱"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9.5 7V4.8h5V7"/><path d="M6.5 7l.9 12.2a1.6 1.6 0 0 0 1.6 1.5h6a1.6 1.6 0 0 0 1.6-1.5L17.5 7"/><path d="M10.2 11v6M13.8 11v6"/></svg></button>
   <button class="icon-btn hist off" id="undoBtn" aria-label="元に戻す" title="元に戻す"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="arc-out" d="M8.3 7.9A6.8 6.8 0 1 1 10.1 18.7"/><path class="arc-in" d="M8.3 7.9A6.8 6.8 0 1 1 10.1 18.7"/><path class="head" d="M3.8 2.4L2.5 11.6L11.5 10.3Z"/></svg></button>
   <button class="icon-btn hist off" id="redoBtn" aria-label="やり直す" title="やり直す"><svg viewBox="0 0 24 24" aria-hidden="true"><g transform="translate(24 0) scale(-1 1)"><path class="arc-out" d="M8.3 7.9A6.8 6.8 0 1 1 10.1 18.7"/><path class="arc-in" d="M8.3 7.9A6.8 6.8 0 1 1 10.1 18.7"/><path class="head" d="M3.8 2.4L2.5 11.6L11.5 10.3Z"/></g></svg></button>
   <button class="icon-btn" id="addTop" aria-label="タスクを追加">
@@ -245,7 +260,6 @@ setTimeout(function () {
   </button>
 </header>
 <div class="menu" id="menu">
-  <button id="mDone">完了済みを見る</button>
   <button id="mCsv">CSVで書き出す</button>
   <button id="mReload">最新の状態にする</button>
   <button id="mLogout">ログアウト</button>
@@ -309,17 +323,17 @@ setTimeout(function () {
   </div>
 </div>
 
-<div class="overlay" id="donePanel">
+<div class="overlay" id="trashPanel">
   <div class="sheet">
     <div class="sheet-head">
-      <button class="icon-btn" id="doneClose" aria-label="閉じる">
+      <button class="icon-btn" id="trashClose" aria-label="閉じる">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
       </button>
       <span class="grow"></span>
     </div>
-    <div style="font-size:19px;font-weight:600">完了済み</div>
-    <div class="note" id="doneNote"></div>
-    <div id="doneList"></div>
+    <div style="font-size:19px;font-weight:600">ゴミ箱</div>
+    <div class="note" id="trashNote"></div>
+    <div id="trashList"></div>
   </div>
 </div>
 
@@ -519,7 +533,7 @@ function saveBoardCache() {
 
 // ---- 描画 ----
 function activeTasks(col) {
-  return state.tasks.filter(function (t) { return !t.done && t.col === col; })
+  return state.tasks.filter(function (t) { return !t.done && !t.deleted && t.col === col; })
     .sort(function (a, b) { return a.ord - b.ord; });
 }
 function render() {
@@ -574,18 +588,22 @@ function buildColumns() {
     input.maxLength = 200;
     input.placeholder = 'タスク名を入力';
     var ok = el('button', null, '追加');
-    ok.type = 'submit';
+    ok.type = 'button';
     form.appendChild(input);
     form.appendChild(ok);
     addBtn.onclick = function () { openAdd(c.id); };
-    form.onsubmit = function (e) {
-      e.preventDefault();
+    var submitAdd = function () {
       var title = input.value.replace(/\s+/g, ' ').trim();
-      if (!title) { input.focus(); return; }
-      input.value = '';
-      addTask(c.id, title);
+      if (title) { input.value = ''; addTask(c.id, title); }
+      reopenAdd(c.id);
       input.focus();
     };
+    form.onsubmit = function (e) { e.preventDefault(); submitAdd(); };
+    // 「追加」を押した瞬間に入力欄から外れると、欄が閉じてキーボードも下がる。押しても外れないようにする
+    ok.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    ok.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
+    ok.addEventListener('touchend', function (e) { e.preventDefault(); submitAdd(); });
+    ok.addEventListener('click', function (e) { e.preventDefault(); submitAdd(); });
     input.onkeydown = function (e) { if (e.key === 'Escape') closeAdd(c.id); };
     input.onblur = function () {
       setTimeout(function () { if (!input.value.trim() && document.activeElement !== input) closeAdd(c.id); }, 150);
@@ -667,8 +685,8 @@ function renderMenuFoot() {
     lines.push(state.me.email);
   }
   $('mFoot').textContent = lines.join('\n');
-  var n = state.tasks.filter(function (t) { return t.done; }).length;
-  $('mDone').textContent = '完了済みを見る（' + n + '件）';
+  var n = state.tasks.filter(function (t) { return t.done || t.deleted; }).length;
+  updateTrashBadge(n);
 }
 
 // ---- 日付 ----
@@ -792,13 +810,42 @@ function setDone(id, done) {
   if (done) toast('完了にしました', '元に戻す', function () { setDone(t.id, false); });
   enqueue(function () { return api('setDone', { id: realId(t.id), done: done }); });
 }
+/** 削除：ゴミ箱へ入れる（30日で自動で消える） */
 function deleteTask(id) {
   var t = findTask(id);
-  if (!t) return;
+  if (!t || t.deleted) return;
   record('削除');
+  t.deleted = new Date().toISOString();
+  render();
+  if ($('trashPanel').classList.contains('open')) renderTrash();
+  toast('ゴミ箱に移しました', '元に戻す', function () { restoreTask(t.id, null); });
+  enqueue(function () { return api('delete', { id: realId(t.id) }); });
+}
+/** ゴミ箱から戻す。col が無ければ元の列へ。どちらも列の一番下に入る */
+function restoreTask(id, col) {
+  var t = findTask(id);
+  if (!t || (!t.done && !t.deleted)) return;
+  var to = col || t.col;
+  record('戻す');
+  t.done = null;
+  t.deleted = null;
+  var others = activeTasks(to);
+  t.ord = others.length ? others.slice(-1)[0].ord + 1 : 0;
+  t.col = to;
+  render();
+  if ($('trashPanel').classList.contains('open')) renderTrash();
+  toast('「' + colName(to) + '」に戻しました');
+  enqueue(function () { return api('restore', { id: realId(t.id), col: to }); });
+}
+/** ゴミ箱で「完全に削除」 */
+function purgeTask(id) {
+  var t = findTask(id);
+  if (!t) return;
+  record('完全に削除');
   state.tasks = state.tasks.filter(function (x) { return x !== t; });
   render();
-  enqueue(function () { return api('delete', { id: realId(id) }); });
+  renderTrash();
+  enqueue(function () { return api('purge', { id: realId(id) }); });
 }
 
 // ---- 元に戻す／やり直す（ページを開いている間、直近20回） ----
@@ -827,7 +874,7 @@ function stepHistory(from, to, verb, emptyMsg) {
   entry.tasks.forEach(function (t) { t.id = realId(t.id); });
   state.tasks = entry.tasks;
   render();
-  if ($('donePanel').classList.contains('open')) renderDone();
+  if ($('trashPanel').classList.contains('open')) renderTrash();
   updateHistoryButtons();
   toast('「' + entry.label + '」を' + verb);
   var target = JSON.parse(JSON.stringify(entry.tasks));
@@ -1026,8 +1073,6 @@ function renderPlan() {
     if (s.visits.length || !s.off) box.appendChild(timelineEl(s));
     host.appendChild(box);
   });
-  if (canMoveOn(date)) host.appendChild(el('div', 'plan-foot', '訪問を長押しして上下に動かすと、時間を変えられます（自分の行・空いている時間だけ）'));
-  host.appendChild(el('div', 'plan-foot', '週間シフトから読んでいます。シフトを直してから反映まで最大5分ほどかかります'));
 }
 function timelineEl(s) {
   var tl = el('div', 'tl');
@@ -1237,43 +1282,153 @@ function findPlanVisit(date, site, client, time) {
   return null;
 }
 
-// ---- 完了済み ----
-function renderDone() {
-  var list = $('doneList');
+// ---- ゴミ箱（完了・削除したカード。新しいものが上。30日で自動で消える） ----
+function trashedAt(t) { return t.deleted || t.done || ''; }
+function trashTasks() {
+  return state.tasks.filter(function (t) { return t.done || t.deleted; })
+    .sort(function (a, b) { return trashedAt(a) < trashedAt(b) ? 1 : -1; });
+}
+function updateTrashBadge(n) {
+  $('trashBtn').setAttribute('aria-label', 'ゴミ箱（' + n + '件）');
+  $('trashBtn').title = 'ゴミ箱（' + n + '件）';
+}
+function dayLabel(iso) {
+  var d = new Date(iso), s = ymd(d);
+  return relDay(s) || fmtMd(s);
+}
+function openTrash() { renderTrash(); $('trashPanel').classList.add('open'); }
+function closeTrash() { $('trashPanel').classList.remove('open', 'peek'); }
+function renderTrash() {
+  var list = $('trashList');
   list.innerHTML = '';
-  var done = state.tasks.filter(function (t) { return t.done; })
-    .sort(function (a, b) { return a.done < b.done ? 1 : -1; });
-  $('doneNote').textContent = '完了から約半年（' + state.keepDays + '日）たつと自動で消えます。';
-  if (!done.length) { list.appendChild(el('div', 'empty', '完了したタスクはまだありません')); return; }
-  done.forEach(function (t) {
-    var row = el('div', 'done-item');
+  var items = trashTasks();
+  $('trashNote').textContent = '完了・削除したカードは、ゴミ箱に入ってから' + state.keepDays + '日たつと自動で消えます。' +
+    '「戻す」で元の列へ。長押しして動かすと、好きな列に戻せます。';
+  if (!items.length) { list.appendChild(el('div', 'empty', 'ゴミ箱は空です')); return; }
+  var lastDay = '';
+  items.forEach(function (t) {
+    var day = dayLabel(trashedAt(t));
+    if (day !== lastDay) { list.appendChild(el('div', 'trash-day', day)); lastDay = day; }
+    var row = el('div', 'trash-item ' + (t.deleted ? 'is-deleted' : 'is-done'));
     var body = el('div', 'body');
     body.appendChild(el('div', 'title', t.title));
-    var d = new Date(t.done);
-    body.appendChild(el('div', 'when', (d.getMonth() + 1) + '/' + d.getDate() + ' 完了 ・ ' + colName(t.col)));
+    var when = el('div', 'when');
+    when.appendChild(el('span', 'trash-tag ' + (t.deleted ? 'deleted' : 'done'), t.deleted ? '削除' : '完了'));
+    var at = new Date(trashedAt(t));
+    when.appendChild(el('span', null, at.getHours() + ':' + pad(at.getMinutes()) + ' ・ ' + colName(t.col)));
+    body.appendChild(when);
     row.appendChild(body);
-    var back = el('button', 'small-btn', '元に戻す');
-    back.onclick = function () { setDone(t.id, false); renderDone(); };
-    var del = el('button', 'small-btn del', '削除');
-    del.onclick = function () {
-      if (!del.classList.contains('armed')) { del.classList.add('armed'); del.textContent = 'もう一度押すと削除'; return; }
-      deleteTask(t.id);
-      renderDone();
+    var back = el('button', 'small-btn', '戻す');
+    back.onclick = function (e) { e.stopPropagation(); restoreTask(t.id, null); };
+    var del = el('button', 'small-btn del', '完全に削除');
+    del.onclick = function (e) {
+      e.stopPropagation();
+      if (!del.classList.contains('armed')) { del.classList.add('armed'); del.textContent = 'もう一度押す'; return; }
+      purgeTask(t.id);
     };
     row.appendChild(back);
     row.appendChild(del);
+    attachTrashDrag(row, t);
     list.appendChild(row);
   });
 }
 
+// ---- ゴミ箱のカードを長押しして、列（スマホは上のタブ）へ戻す ----
+var tdrag = null;
+function attachTrashDrag(row, t) {
+  row.addEventListener('touchstart', function (e) {
+    if (e.touches.length !== 1 || e.target.closest('button')) return;
+    tdrag = { row: row, task: t, x0: e.touches[0].clientX, y0: e.touches[0].clientY, active: false };
+    tdrag.x = tdrag.x0; tdrag.y = tdrag.y0;
+    tdrag.timer = setTimeout(startTrashDrag, 380);
+  }, { passive: true });
+  row.addEventListener('mousedown', function (e) {
+    if (e.button !== 0 || e.target.closest('button')) return;
+    tdrag = { row: row, task: t, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, active: false, mouse: true };
+  });
+}
+function startTrashDrag() {
+  if (!tdrag || tdrag.active) return;
+  tdrag.active = true;
+  if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) { /* 無視 */ } }
+  var r = tdrag.row.getBoundingClientRect();
+  var g = tdrag.row.cloneNode(true);
+  g.className = 'trash-item trash-ghost';
+  g.style.width = r.width + 'px';
+  g.style.left = r.left + 'px';
+  g.style.top = r.top + 'px';
+  document.body.appendChild(g);
+  tdrag.ghost = g;
+  tdrag.row.classList.add('lifted');
+  $('trashPanel').classList.add('peek');           // 一覧を下げて、後ろのタブ・列を見せる
+  if (mobileMq.matches) $('tabs').classList.add('dragging');
+  moveTrashGhost();
+}
+function trashDropTarget(x, y) {
+  var hit = document.elementFromPoint(x, y);
+  if (!hit || !hit.closest) return null;
+  if (mobileMq.matches) {
+    var tab = hit.closest('.tab');
+    return tab && tab.dataset.col !== 'plan' ? tab : null;
+  }
+  var col = hit.closest('.col');
+  return col && col.dataset.col !== 'plan' ? col : null;
+}
+function moveTrashGhost() {
+  tdrag.ghost.style.transform = 'translate(' + (tdrag.x - tdrag.x0) + 'px,' + (tdrag.y - tdrag.y0) + 'px) scale(1.03)';
+  var target = trashDropTarget(tdrag.x, tdrag.y);
+  if (target === tdrag.over) return;
+  if (tdrag.over) tdrag.over.classList.remove('drop-over');
+  tdrag.over = target;
+  if (target) target.classList.add('drop-over');
+}
+function endTrashDrag() {
+  if (!tdrag) return;
+  var d = tdrag;
+  tdrag = null;
+  clearTimeout(d.timer);
+  if (!d.active) return;
+  d.ghost.remove();
+  d.row.classList.remove('lifted');
+  $('tabs').classList.remove('dragging');
+  if (d.over) d.over.classList.remove('drop-over');
+  $('trashPanel').classList.remove('peek');
+  if (d.over) restoreTask(d.task.id, d.over.dataset.col);
+}
+document.addEventListener('touchmove', function (e) {
+  if (!tdrag) return;
+  var t = e.touches[0];
+  if (!tdrag.active) {
+    if (Math.abs(t.clientX - tdrag.x0) > 8 || Math.abs(t.clientY - tdrag.y0) > 8) { clearTimeout(tdrag.timer); tdrag = null; }
+    return;
+  }
+  e.preventDefault();
+  tdrag.x = t.clientX; tdrag.y = t.clientY;
+  moveTrashGhost();
+}, { passive: false });
+document.addEventListener('mousemove', function (e) {
+  if (!tdrag) return;
+  if (!tdrag.active) {
+    if (Math.abs(e.clientX - tdrag.x0) < 6 && Math.abs(e.clientY - tdrag.y0) < 6) return;
+    startTrashDrag();
+  }
+  tdrag.x = e.clientX; tdrag.y = e.clientY;
+  moveTrashGhost();
+});
+document.addEventListener('touchend', endTrashDrag);
+document.addEventListener('touchcancel', function () { if (tdrag && tdrag.active) tdrag.over = null; endTrashDrag(); });
+document.addEventListener('mouseup', endTrashDrag);
+
 // ---- CSV ----
 function exportCsv() {
-  var rows = [['列', 'タイトル', '期限', 'メモ', '作成日', '完了日']];
+  var rows = [['状態', '列', 'タイトル', '期限', 'メモ', '作成日', '完了日', '削除日']];
   var order = COLS.map(function (c) { return c.id; });
   state.tasks.slice().sort(function (a, b) {
-    return (a.done ? 1 : 0) - (b.done ? 1 : 0) || order.indexOf(a.col) - order.indexOf(b.col) || a.ord - b.ord;
+    var ta = a.done || a.deleted ? 1 : 0, tb = b.done || b.deleted ? 1 : 0;
+    return ta - tb || order.indexOf(a.col) - order.indexOf(b.col) || a.ord - b.ord;
   }).forEach(function (t) {
-    rows.push([colName(t.col), t.title, t.due || '', t.memo || '', (t.created || '').slice(0, 10), t.done ? ymd(new Date(t.done)) : '']);
+    rows.push([t.deleted ? '削除' : t.done ? '完了' : '', colName(t.col), t.title, t.due || '', t.memo || '', (t.created || '').slice(0, 10),
+      t.done ? ymd(new Date(t.done)) : '', t.deleted ? ymd(new Date(t.deleted)) : '']);
   });
   var csv = '﻿' + rows.map(function (r) {
     return r.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(',');
@@ -1331,7 +1486,7 @@ document.addEventListener('touchmove', function (e) {
   if (e.touches.length) trackDrag(e.touches[0].clientX, e.touches[0].clientY);
 }, { capture: true, passive: true });
 
-// ---- スマホ：左右スワイプで列を切り替え（予定タブでは日付を移動） ----
+// ---- スマホ：左右スワイプで「今すぐ／次に／いつか／予定」を移動 ----
 (function () {
   var sx = 0, sy = 0, tracking = false;
   var board = $('board');
@@ -1348,7 +1503,6 @@ document.addEventListener('touchmove', function (e) {
     var dx = e.changedTouches[0].clientX - sx;
     var dy = e.changedTouches[0].clientY - sy;
     if (Math.abs(dx) < 70 || Math.abs(dy) > 50) return;
-    if (state.active === 'plan') { loadPlan(addDays(plan.date, dx < 0 ? 1 : -1)); return; }
     var i = TABS.map(function (c) { return c.id; }).indexOf(state.active);
     var next = i + (dx < 0 ? 1 : -1);
     if (next >= 0 && next < TABS.length) setActive(TABS[next].id);
@@ -1359,7 +1513,7 @@ document.addEventListener('touchmove', function (e) {
 $('addTop').onclick = function () { openAdd(mobileMq.matches && state.active !== 'plan' ? state.active : 'now'); };
 $('menuBtn').onclick = function (e) { e.stopPropagation(); $('menu').classList.toggle('open'); };
 document.addEventListener('click', function (e) { if (!$('menu').contains(e.target)) $('menu').classList.remove('open'); });
-$('mDone').onclick = function () { $('menu').classList.remove('open'); renderDone(); $('donePanel').classList.add('open'); };
+$('trashBtn').onclick = openTrash;
 $('mCsv').onclick = function () { $('menu').classList.remove('open'); exportCsv(); };
 $('mReload').onclick = function () {
   $('menu').classList.remove('open');
@@ -1367,8 +1521,8 @@ $('mReload').onclick = function () {
   if (plan.date) loadPlan(plan.date);
 };
 $('mLogout').onclick = function () { $('menu').classList.remove('open'); logout(); };
-$('doneClose').onclick = function () { $('donePanel').classList.remove('open'); };
-$('donePanel').onclick = function (e) { if (e.target === this) this.classList.remove('open'); };
+$('trashClose').onclick = closeTrash;
+$('trashPanel').onclick = function (e) { if (e.target === this) closeTrash(); };
 $('vClose').onclick = closeVisit;
 $('vCloseBottom').onclick = closeVisit;
 $('visitPanel').onclick = function (e) { if (e.target === this) closeVisit(); };
@@ -1385,7 +1539,6 @@ $('dDel').onclick = function () {
   var id = editing.id;
   closeDetail(false);
   deleteTask(id);
-  toast('削除しました');
 };
 $('undoBtn').onclick = undo;
 $('redoBtn').onclick = redo;
@@ -1400,7 +1553,7 @@ document.addEventListener('keydown', function (e) {
 document.addEventListener('keydown', function (e) {
   if (e.key !== 'Escape') return;
   if ($('detail').classList.contains('open')) closeDetail(true);
-  $('donePanel').classList.remove('open');
+  closeTrash();
   closeVisit();
   $('menu').classList.remove('open');
 });
