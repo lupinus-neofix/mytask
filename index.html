@@ -147,6 +147,21 @@ input, textarea { font: inherit; color: var(--ink); }
 .v-block { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-top: 6px; font-size: 14px; background: var(--card); white-space: pre-wrap; word-break: break-word; }
 .v-block .who { font-size: 12px; color: var(--sub); margin-top: 4px; white-space: normal; }
 .v-block .reply { font-size: 13px; color: var(--sub); border-left: 2px solid var(--line-strong); padding-left: 8px; margin-top: 6px; }
+.v-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.chip { padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line-strong); font-size: 14px; background: var(--card); }
+.chip.danger { color: var(--danger); }
+.chip.danger.armed { background: var(--danger); color: #fff; border-color: var(--danger); }
+.chip.main { background: var(--ink); color: var(--page); border-color: var(--ink); font-weight: 600; }
+.chip:disabled { opacity: .5; }
+.v-row { display: flex; gap: 8px; align-items: flex-start; margin-top: 6px; }
+.v-row .v-block { flex: 1; margin-top: 0; }
+.v-row .chip { flex: none; padding: 6px 10px; font-size: 13px; }
+.v-input { width: 100%; margin-top: 6px; }
+.tl-add { font-size: 13px; color: var(--muted); padding-top: 5px; display: block; }
+.tl-row.addable { cursor: pointer; }
+.tl-row.addable:active { background: var(--c-pill); border-radius: 8px; }
+.trash-all { font-size: 13px; color: var(--danger); padding: 6px 10px; border-radius: 8px; border: 1px solid transparent; }
+.trash-all.armed { background: var(--danger); color: #fff; }
 .v-cancel { background: var(--cancel-bg); color: var(--cancel); border-radius: 10px; padding: 10px 12px; font-size: 14px; font-weight: 600; margin-top: 10px; }
 
 .menu { position: absolute; left: 12px; top: calc(52px + var(--safe-top)); z-index: 20; min-width: 240px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.14); padding: 6px; display: none; }
@@ -329,6 +344,7 @@ setTimeout(function () {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
       </button>
       <span class="grow"></span>
+      <button class="trash-all" id="trashAll">すべて削除</button>
     </div>
     <div style="font-size:19px;font-weight:600">ゴミ箱</div>
     <div class="note" id="trashNote"></div>
@@ -850,6 +866,17 @@ function restoreTask(id, col) {
   toast('「' + colName(to) + '」に戻しました');
   enqueue(function () { return api('restore', { id: realId(t.id), col: to }); });
 }
+/** ゴミ箱で「すべて削除」（2回押し。すぐなら↶で戻せる） */
+function purgeAllTrash() {
+  var items = trashTasks();
+  if (!items.length) return;
+  record('すべて削除');
+  state.tasks = state.tasks.filter(function (t) { return !t.done && !t.deleted; });
+  render();
+  renderTrash();
+  toast(items.length + '件を完全に削除しました', '元に戻す', undo);
+  enqueue(function () { return api('purgeAll'); });
+}
 /** ゴミ箱で「完全に削除」 */
 function purgeTask(id) {
   var t = findTask(id);
@@ -1101,6 +1128,11 @@ function timelineEl(s) {
     row.appendChild(el('div', 'tl-time', t));
     var cell = el('div');
     vs.forEach(function (v) { cell.appendChild(visitEl(s, v)); });
+    if (!vs.length && canMoveOn(plan.date) && !s.off) {
+      row.classList.add('addable');
+      cell.appendChild(el('span', 'tl-add', '＋'));
+      row.onclick = function () { if (!suppressClick) openAddVisit(s, t); };
+    }
     row.appendChild(cell);
     tl.appendChild(row);
   });
@@ -1120,12 +1152,62 @@ function visitEl(s, v) {
   if (canMoveOn(plan.date)) attachVisitDrag(b, s, v);
   return b;
 }
+var CANCEL_REASONS = ['利用者都合', '外泊・不在', '体調不良', '入院', '事業所都合', '不明', '自分で書く'];
+var visitCtx = null;   // 開いている訪問 {site, time, client}
+function siteOf(name) {
+  return plan.data && plan.data.sites.filter(function (x) { return x.site === name; })[0];
+}
 function openVisit(s, v) {
+  visitCtx = { site: s.site, time: v.time, client: v.client };
+  var editable = canMoveOn(plan.date);
   $('vTitle').textContent = v.time + '　' + v.client;
   $('vWhere').textContent = s.site + ' ' + fmtMd(plan.date) + (s.tab ? ' ・ ' + s.tab : '');
   var body = $('vBody');
   body.innerHTML = '';
   if (v.cancelled) body.appendChild(el('div', 'v-cancel', 'キャンセル' + (v.cancelReason ? '（' + v.cancelReason + '）' : '')));
+
+  if (editable) {
+    var acts = el('div', 'v-actions');
+    var reasons = el('div', 'v-actions');
+    reasons.hidden = true;
+    if (!v.cancelled) {
+      var cb = el('button', 'chip', 'キャンセルにする');
+      cb.onclick = function () { reasons.hidden = !reasons.hidden; };
+      acts.appendChild(cb);
+      CANCEL_REASONS.forEach(function (r) {
+        var rb = el('button', 'chip', r);
+        rb.onclick = function () {
+          if (r !== '自分で書く') { doCancel(s, v, r); return; }
+          var box = el('div', 'v-row');
+          var inp = el('input', 'field v-input');
+          inp.maxLength = 40;
+          inp.placeholder = '理由';
+          var go = el('button', 'chip main', '決定');
+          go.onclick = function () { if (inp.value.trim()) doCancel(s, v, inp.value.trim()); };
+          box.appendChild(inp); box.appendChild(go);
+          reasons.innerHTML = '';
+          reasons.appendChild(box);
+          inp.focus();
+        };
+        reasons.appendChild(rb);
+      });
+    } else {
+      var ub = el('button', 'chip', 'キャンセルを取り消す');
+      ub.onclick = function () {
+        editVisit('uncancel', s.site, v.time, v.client, {}, function () { toast('キャンセルを取り消しました'); refreshVisit(); });
+      };
+      acts.appendChild(ub);
+    }
+    var db = el('button', 'chip danger', '削除');
+    db.onclick = function () {
+      if (!db.classList.contains('armed')) { db.classList.add('armed'); db.textContent = 'もう一度押すと削除'; return; }
+      editVisit('delete', s.site, v.time, v.client, {}, function () { closeVisit(); toast(v.client + ' の訪問を削除しました'); });
+    };
+    acts.appendChild(db);
+    body.appendChild(acts);
+    body.appendChild(reasons);
+  }
+
   var cs = commentsAt(s.site, v.ref);
   body.appendChild(el('div', 'label', 'コメント'));
   if (cs.length) {
@@ -1133,15 +1215,142 @@ function openVisit(s, v) {
       var bl = el('div', 'v-block', c.text);
       if (c.author) bl.appendChild(el('div', 'who', c.author));
       (c.replies || []).forEach(function (r) { bl.appendChild(el('div', 'reply', r)); });
-      body.appendChild(bl);
+      if (!editable) { body.appendChild(bl); return; }
+      var row = el('div', 'v-row');
+      row.appendChild(bl);
+      var done = el('button', 'chip', '済');
+      done.onclick = function () {
+        editVisit('resolve', s.site, v.time, v.client, { at: c.at, text: c.text }, function () {
+          toast('コメントを済にしました');
+          plan.comments = (plan.comments || []).filter(function (x) { return x !== c; });
+          refreshVisit();
+        });
+      };
+      row.appendChild(done);
+      body.appendChild(row);
     });
   } else {
     body.appendChild(el('div', 'note', plan.commentsLoading ? '読み込み中…' : 'ありません'));
   }
+
   body.appendChild(el('div', 'label', 'メモ'));
-  if (v.memos && v.memos.length) v.memos.forEach(function (m) { body.appendChild(el('div', 'v-block', m)); });
-  else body.appendChild(el('div', 'note', 'ありません'));
+  var items = v.memoItems || [];
+  var shown = items.map(function (m) { return m.text + '（' + m.author + 'さんより ' + m.at + '）'; });
+  var plain = (v.memos || []).filter(function (m) { return shown.indexOf(m) < 0; });
+  if (!items.length && !plain.length) body.appendChild(el('div', 'note', 'ありません'));
+  plain.forEach(function (m) { body.appendChild(el('div', 'v-block', m)); });
+  items.forEach(function (m) {
+    var bl = el('div', 'v-block', m.text);
+    if (m.author) bl.appendChild(el('div', 'who', m.author + ' ' + m.at));
+    if (!editable) { body.appendChild(bl); return; }
+    var row = el('div', 'v-row');
+    row.appendChild(bl);
+    var mine = state.me && m.author === state.me.shiftName;
+    var x = el('button', 'chip', mine ? '削除' : '済');
+    x.onclick = function () {
+      editVisit('unmemo', s.site, v.time, v.client, { key: m.key }, function () { toast(mine ? 'メモを消しました' : 'メモを済にしました'); refreshVisit(); });
+    };
+    row.appendChild(x);
+    body.appendChild(row);
+  });
+  if (editable) {
+    var ta = el('textarea', 'field f-memo v-input');
+    ta.maxLength = 200;
+    ta.placeholder = 'メモを書く（朝8時のLINE訪問メモにも届きます）';
+    ta.style.minHeight = '70px';
+    var add = el('button', 'chip main', 'メモを追加');
+    add.style.marginTop = '8px';
+    add.onclick = function () {
+      var text = ta.value.trim();
+      if (!text) { ta.focus(); return; }
+      editVisit('memo', s.site, v.time, v.client, { text: text }, function (res) {
+        toast('メモを追加しました', '元に戻す', function () {
+          editVisit('unmemo', s.site, v.time, v.client, { key: res.key }, function () { toast('メモを取り消しました'); refreshVisit(); });
+        });
+        refreshVisit();
+      });
+    };
+    body.appendChild(ta);
+    body.appendChild(add);
+  }
   $('visitPanel').classList.add('open');
+}
+function doCancel(s, v, reason) {
+  editVisit('cancel', s.site, v.time, v.client, { reason: reason }, function () {
+    toast('キャンセルにしました（' + reason + '）', '元に戻す', function () {
+      editVisit('uncancel', s.site, v.time, v.client, {}, function () { toast('キャンセルを取り消しました'); refreshVisit(); });
+    });
+    refreshVisit();
+  });
+}
+/** 保存のあと、開いている訪問を最新の内容で開き直す（消えていれば閉じる） */
+function refreshVisit() {
+  if (!visitCtx || !$('visitPanel').classList.contains('open')) return;
+  var s = siteOf(visitCtx.site);
+  var v = s && findPlanVisit(plan.date, visitCtx.site, visitCtx.client, visitCtx.time);
+  if (s && v) openVisit(s, v); else closeVisit();
+}
+/** 空いている時間を押したとき：訪問を追加 */
+function openAddVisit(s, time) {
+  visitCtx = null;
+  $('vTitle').textContent = time + ' に訪問を追加';
+  $('vWhere').textContent = s.site + ' ' + fmtMd(plan.date) + (s.tab ? ' ・ ' + s.tab : '');
+  var body = $('vBody');
+  body.innerHTML = '';
+  body.appendChild(el('div', 'label', '利用者名'));
+  var inp = el('input', 'field v-input');
+  inp.maxLength = 30;
+  inp.placeholder = 'シフトに書く名前';
+  inp.setAttribute('list', 'clientList');
+  var dl = el('datalist');
+  dl.id = 'clientList';
+  ((plan.data && plan.data.clients) || []).forEach(function (c) { var o = el('option'); o.value = c; dl.appendChild(o); });
+  var go = el('button', 'chip main', '追加');
+  go.style.marginTop = '10px';
+  var submit = function () {
+    var client = inp.value.replace(/\s+/g, ' ').trim();
+    if (!client) { inp.focus(); return; }
+    editVisit('add', s.site, time, client, {}, function () {
+      closeVisit();
+      toast(time + ' に ' + client + ' を追加しました', '元に戻す', function () {
+        editVisit('delete', s.site, time, client, {}, function () { toast('追加を取り消しました'); });
+      });
+    });
+  };
+  go.onclick = submit;
+  inp.onkeydown = function (e) { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); submit(); } };
+  body.appendChild(inp);
+  body.appendChild(dl);
+  body.appendChild(go);
+  $('visitPanel').classList.add('open');
+  setTimeout(function () { inp.focus(); }, 50);
+}
+/** 予定の書き込み。保存できたらシフトの最新で描き直して after を呼ぶ */
+function editVisit(op, site, time, client, extra, after) {
+  var date = plan.date;
+  var args = { op: op, date: date, site: site, time: time, client: client };
+  Object.keys(extra || {}).forEach(function (k) { args[k] = extra[k]; });
+  pendingCount++;
+  setStatus();
+  setVisitBusy(true);
+  api('editVisit', args).then(function (res) {
+    if (plan.date === date) {
+      plan.data = res.schedule;
+      storeJson(planCacheKey(date), { data: res.schedule, comments: plan.comments });
+      renderPlan();
+    }
+    if (after) after(res);
+  }).catch(function (err) {
+    toast(err.message || '保存できませんでした');
+    if (plan.date === date) loadPlan(date);
+  }).then(function () {
+    pendingCount--;
+    setStatus();
+    setVisitBusy(false);
+  });
+}
+function setVisitBusy(on) {
+  Array.prototype.forEach.call($('vBody').querySelectorAll('button'), function (b) { b.disabled = on; });
 }
 function closeVisit() { $('visitPanel').classList.remove('open'); }
 
@@ -1315,6 +1524,10 @@ function renderTrash() {
   var list = $('trashList');
   list.innerHTML = '';
   var items = trashTasks();
+  var all = $('trashAll');
+  all.classList.remove('armed');
+  all.textContent = 'すべて削除';
+  all.hidden = !items.length;
   $('trashNote').textContent = '完了・削除したカードは、ゴミ箱に入ってから' + state.keepDays + '日たつと自動で消えます。' +
     '「戻す」で元の列へ。長押しして動かすと、好きな列に戻せます。';
   if (!items.length) { list.appendChild(el('div', 'empty', 'ゴミ箱は空です')); return; }
@@ -1334,11 +1547,7 @@ function renderTrash() {
     var back = el('button', 'small-btn', '戻す');
     back.onclick = function (e) { e.stopPropagation(); restoreTask(t.id, null); };
     var del = el('button', 'small-btn del', '完全に削除');
-    del.onclick = function (e) {
-      e.stopPropagation();
-      if (!del.classList.contains('armed')) { del.classList.add('armed'); del.textContent = 'もう一度押す'; return; }
-      purgeTask(t.id);
-    };
+    del.onclick = function (e) { e.stopPropagation(); purgeTask(t.id); };   // 1回で消す（↶で戻せる）
     row.appendChild(back);
     row.appendChild(del);
     attachTrashDrag(row, t);
@@ -1503,6 +1712,15 @@ document.addEventListener('click', function (e) { if (!$('menu').contains(e.targ
 $('trashBtn').onclick = openTrash;
 $('mLogout').onclick = function () { $('menu').classList.remove('open'); logout(); };
 $('trashClose').onclick = closeTrash;
+$('trashAll').onclick = function () {
+  var b = $('trashAll');
+  if (!b.classList.contains('armed')) {
+    b.classList.add('armed');
+    b.textContent = 'もう一度押すと' + trashTasks().length + '件すべて削除';
+    return;
+  }
+  purgeAllTrash();
+};
 $('trashPanel').onclick = function (e) { if (e.target === this) closeTrash(); };
 $('vClose').onclick = closeVisit;
 $('vCloseBottom').onclick = closeVisit;
