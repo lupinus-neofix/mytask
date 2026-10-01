@@ -143,7 +143,7 @@ input, textarea { font: inherit; color: var(--ink); }
 .tl.dragging .tl-row.drop-ok { background: var(--c-pill); border-radius: 8px; }
 .tl.dragging .tl-row.drop-ok .tl-time { color: var(--c-ink); font-weight: 700; }
 .tl.dragging .tl-row.drop-ng { background: var(--danger-bg); border-radius: 8px; }
-.visit.moving { opacity: .6; }
+.visit.moving { opacity: .55; }
 .v-block { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-top: 6px; font-size: 14px; background: var(--card); white-space: pre-wrap; word-break: break-word; }
 .v-block .who { font-size: 12px; color: var(--sub); margin-top: 4px; white-space: normal; }
 .v-block .reply { font-size: 13px; color: var(--sub); border-left: 2px solid var(--line-strong); padding-left: 8px; margin-top: 6px; }
@@ -1016,6 +1016,14 @@ function prunePlanCache() {
   } catch (e) { /* 無視 */ }
 }
 function loadPlan(date) {
+  if (planPending > 0) {            // 保存待ちがあるうちに読み直すと、保存前の古いシフトで上書きしてしまう
+    plan.date = date;
+    var c0 = storeJson(planCacheKey(date));
+    if (c0 && c0.data) { plan.data = c0.data; plan.comments = c0.comments || null; }
+    renderPlan();
+    planQueue = planQueue.then(function () { if (plan.date === date) loadPlan(date); });
+    return;
+  }
   var my = ++planReq;
   plan.date = date;
   plan.error = '';
@@ -1129,7 +1137,6 @@ function timelineEl(s) {
     vs.forEach(function (v) { cell.appendChild(visitEl(s, v)); });
     if (!vs.length && canMoveOn(plan.date) && !s.off) {
       row.classList.add('addable');
-      cell.appendChild(el('span', 'tl-add', '＋'));
       row.onclick = function () { if (!suppressClick) openAddVisit(s, t); };
     }
     row.appendChild(cell);
@@ -1146,7 +1153,7 @@ function visitEl(s, v) {
   if (commentsAt(s.site, v.ref).length) icons.insertAdjacentHTML('beforeend', COMMENT_SVG);
   if (icons.childNodes.length) b.appendChild(icons);
   if (v.cancelled) b.appendChild(el('span', 'tag', 'キャンセル'));
-  if (v.moving) b.classList.add('moving');
+  if (v.moving || v.pending) b.classList.add('moving');
   b.onclick = function () { if (!suppressClick) openVisit(s, v); };
   if (canMoveOn(plan.date)) attachVisitDrag(b, s, v);
   return b;
@@ -1156,6 +1163,7 @@ var visitCtx = null;   // 開いている訪問 {site, time, client}
 function siteOf(name) {
   return plan.data && plan.data.sites.filter(function (x) { return x.site === name; })[0];
 }
+function nowStamp() { var d = new Date(); return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + pad(d.getMinutes()); }
 function openVisit(s, v) {
   visitCtx = { site: s.site, time: v.time, client: v.client };
   var editable = canMoveOn(plan.date);
@@ -1176,13 +1184,13 @@ function openVisit(s, v) {
       CANCEL_REASONS.forEach(function (r) {
         var rb = el('button', 'chip', r);
         rb.onclick = function () {
-          if (r !== '自分で書く') { doCancel(s, v, r); return; }
+          if (r !== '自分で書く') { doCancel(s.site, v, r); return; }
           var box = el('div', 'v-row');
           var inp = el('input', 'field v-input');
           inp.maxLength = 40;
           inp.placeholder = '理由';
           var go = el('button', 'chip main', '決定');
-          go.onclick = function () { if (inp.value.trim()) doCancel(s, v, inp.value.trim()); };
+          go.onclick = function () { if (inp.value.trim()) doCancel(s.site, v, inp.value.trim()); };
           box.appendChild(inp); box.appendChild(go);
           reasons.innerHTML = '';
           reasons.appendChild(box);
@@ -1192,15 +1200,18 @@ function openVisit(s, v) {
       });
     } else {
       var ub = el('button', 'chip', 'キャンセルを取り消す');
-      ub.onclick = function () {
-        editVisit('uncancel', s.site, v.time, v.client, {}, function () { toast('キャンセルを取り消しました'); refreshVisit(); });
-      };
+      ub.onclick = function () { doUncancel(s.site, v); toast('キャンセルを取り消しました'); };
       acts.appendChild(ub);
     }
     var db = el('button', 'chip danger', '削除');
     db.onclick = function () {
       if (!db.classList.contains('armed')) { db.classList.add('armed'); db.textContent = 'もう一度押すと削除'; return; }
-      editVisit('delete', s.site, v.time, v.client, {}, function () { closeVisit(); toast(v.client + ' の訪問を削除しました'); });
+      var site = s.site, time = v.time, client = v.client;
+      closeVisit();
+      editVisit('delete', site, time, client, {}, function (sx) {
+        sx.visits = sx.visits.filter(function (x) { return !(x.time === time && x.client === client); });
+      });
+      toast(client + ' の訪問を削除しました');
     };
     acts.appendChild(db);
     body.appendChild(acts);
@@ -1220,10 +1231,9 @@ function openVisit(s, v) {
       var done = el('button', 'chip', '済');
       done.onclick = function () {
         editVisit('resolve', s.site, v.time, v.client, { at: c.at, text: c.text }, function () {
-          toast('コメントを済にしました');
           plan.comments = (plan.comments || []).filter(function (x) { return x !== c; });
-          refreshVisit();
         });
+        toast('コメントを済にしました');
       };
       row.appendChild(done);
       body.appendChild(row);
@@ -1244,12 +1254,17 @@ function openVisit(s, v) {
     if (!editable) { body.appendChild(bl); return; }
     var row = el('div', 'v-row');
     row.appendChild(bl);
-    var mine = state.me && m.author === state.me.shiftName;
-    var x = el('button', 'chip', mine ? '削除' : '済');
-    x.onclick = function () {
-      editVisit('unmemo', s.site, v.time, v.client, { key: m.key }, function () { toast(mine ? 'メモを消しました' : 'メモを済にしました'); refreshVisit(); });
-    };
-    row.appendChild(x);
+    if (m.key) {                    // 保存が終わるまで（鍵が無いあいだ）は消せない
+      var mine = state.me && m.author === state.me.shiftName;
+      var x = el('button', 'chip', mine ? '削除' : '済');
+      x.onclick = function () {
+        editVisit('unmemo', s.site, v.time, v.client, { key: m.key }, function (sx, vx) {
+          vx.memoItems = (vx.memoItems || []).filter(function (it) { return it.key !== m.key; });
+        });
+        toast(mine ? 'メモを消しました' : 'メモを済にしました');
+      };
+      row.appendChild(x);
+    }
     body.appendChild(row);
   });
   if (editable) {
@@ -1262,11 +1277,18 @@ function openVisit(s, v) {
     add.onclick = function () {
       var text = ta.value.trim();
       if (!text) { ta.focus(); return; }
-      editVisit('memo', s.site, v.time, v.client, { text: text }, function (res) {
-        toast('メモを追加しました', '元に戻す', function () {
-          editVisit('unmemo', s.site, v.time, v.client, { key: res.key }, function () { toast('メモを取り消しました'); refreshVisit(); });
+      var memoKey = '';
+      editVisit('memo', s.site, v.time, v.client, { text: text }, function (sx, vx) {
+        vx.memoItems = (vx.memoItems || []).concat([{ text: text, author: state.me ? state.me.shiftName : '', at: nowStamp(), key: '' }]);
+      }, function (res) { memoKey = res.key; });
+      toast('メモを追加しました', '元に戻す', function () {
+        editVisit('unmemo', s.site, v.time, v.client, function () { return { key: memoKey }; }, function (sx, vx) {
+          var removed = false;
+          vx.memoItems = (vx.memoItems || []).filter(function (it) {
+            if (!removed && it.text === text && (it.key === memoKey || it.key === '')) { removed = true; return false; }
+            return true;
+          });
         });
-        refreshVisit();
       });
     };
     body.appendChild(ta);
@@ -1274,15 +1296,14 @@ function openVisit(s, v) {
   }
   $('visitPanel').classList.add('open');
 }
-function doCancel(s, v, reason) {
-  editVisit('cancel', s.site, v.time, v.client, { reason: reason }, function () {
-    toast('キャンセルにしました（' + reason + '）', '元に戻す', function () {
-      editVisit('uncancel', s.site, v.time, v.client, {}, function () { toast('キャンセルを取り消しました'); refreshVisit(); });
-    });
-    refreshVisit();
-  });
+function doCancel(site, v, reason) {
+  editVisit('cancel', site, v.time, v.client, { reason: reason }, function (sx, vx) { vx.cancelled = true; vx.cancelReason = reason; });
+  toast('キャンセルにしました（' + reason + '）', '元に戻す', function () { doUncancel(site, v); });
 }
-/** 保存のあと、開いている訪問を最新の内容で開き直す（消えていれば閉じる） */
+function doUncancel(site, v) {
+  editVisit('uncancel', site, v.time, v.client, {}, function (sx, vx) { vx.cancelled = false; vx.cancelReason = ''; });
+}
+/** 開いている訪問を、いまの内容で開き直す（消えていれば閉じる） */
 function refreshVisit() {
   if (!visitCtx || !$('visitPanel').classList.contains('open')) return;
   var s = siteOf(visitCtx.site);
@@ -1306,13 +1327,18 @@ function openAddVisit(s, time) {
   ((plan.data && plan.data.clients) || []).forEach(function (c) { var o = el('option'); o.value = c; dl.appendChild(o); });
   var go = el('button', 'chip main', '追加');
   go.style.marginTop = '10px';
+  var site = s.site;
   var submit = function () {
     var client = inp.value.replace(/\s+/g, ' ').trim();
     if (!client) { inp.focus(); return; }
-    editVisit('add', s.site, time, client, {}, function () {
-      closeVisit();
-      toast(time + ' に ' + client + ' を追加しました', '元に戻す', function () {
-        editVisit('delete', s.site, time, client, {}, function () { toast('追加を取り消しました'); });
+    closeVisit();
+    editVisit('add', site, time, client, {}, function (sx) {
+      sx.visits.push({ time: time, client: client, ref: '', cancelled: false, cancelReason: '', memos: [], memoItems: [], pending: true });
+      sx.visits.sort(function (a, b) { return mins(a.time) - mins(b.time); });
+    });
+    toast(time + ' に ' + client + ' を追加しました', '元に戻す', function () {
+      editVisit('delete', site, time, client, {}, function (sx) {
+        sx.visits = sx.visits.filter(function (x) { return !(x.time === time && x.client === client); });
       });
     });
   };
@@ -1324,32 +1350,59 @@ function openAddVisit(s, time) {
   $('visitPanel').classList.add('open');
   setTimeout(function () { inp.focus(); }, 50);
 }
-/** 予定の書き込み。保存できたらシフトの最新で描き直して after を呼ぶ */
-function editVisit(op, site, time, client, extra, after) {
+
+// ---- 予定の書き込み：先に画面を変え、シフトへは裏で順番に保存する ----
+var planQueue = Promise.resolve();
+var planPending = 0;
+/**
+ * op を保存する。local(拠点, 訪問) で画面を先に変える（訪問が無い操作では訪問は空のもの）。
+ * extra は値か、保存する直前に作る関数（元に戻すで、先の保存の結果を使うため）。
+ */
+function editVisit(op, site, time, client, extra, local, done) {
   var date = plan.date;
-  var args = { op: op, date: date, site: site, time: time, client: client };
-  Object.keys(extra || {}).forEach(function (k) { args[k] = extra[k]; });
+  if (local && plan.data && plan.data.date === date) {
+    var sx = siteOf(site);
+    if (sx) {
+      var vx = findPlanVisit(date, site, client, time);
+      local(sx, vx || {});
+      if (vx && sx.visits.indexOf(vx) >= 0) vx.pending = true;
+      afterLocalChange(date);
+    }
+  }
+  planOp('editVisit', function () {
+    var args = { op: op, date: date, site: site, time: time, client: client };
+    var more = typeof extra === 'function' ? extra() : (extra || {});
+    Object.keys(more).forEach(function (k) { args[k] = more[k]; });
+    return args;
+  }, date, function (res) { if (done) done(res); return res.schedule; });
+}
+function afterLocalChange(date) {
+  storeJson(planCacheKey(date), { data: plan.data, comments: plan.comments });
+  renderPlan();
+  refreshVisit();
+}
+/** 保存の順番待ち。全部終わったら、シフトの最新（サーバーの返事）で描き直す */
+function planOp(action, makeArgs, date, pickSchedule) {
+  planPending++;
   pendingCount++;
   setStatus();
-  setVisitBusy(true);
-  api('editVisit', args).then(function (res) {
-    if (plan.date === date) {
-      plan.data = res.schedule;
-      storeJson(planCacheKey(date), { data: res.schedule, comments: plan.comments });
-      renderPlan();
-    }
-    if (after) after(res);
-  }).catch(function (err) {
-    toast(err.message || '保存できませんでした');
-    if (plan.date === date) loadPlan(date);
+  planQueue = planQueue.then(function () {
+    return api(action, makeArgs()).then(function (res) {
+      var schedule = pickSchedule(res);
+      planPending--;
+      if (planPending === 0 && plan.date === date && schedule) {
+        plan.data = schedule;
+        afterLocalChange(date);
+      }
+    }, function (err) {
+      planPending--;
+      toast(err.message || '保存できませんでした');
+      if (plan.date === date) loadPlan(date);
+    });
   }).then(function () {
     pendingCount--;
     setStatus();
-    setVisitBusy(false);
   });
-}
-function setVisitBusy(on) {
-  Array.prototype.forEach.call($('vBody').querySelectorAll('button'), function (b) { b.disabled = on; });
 }
 function closeVisit() { $('visitPanel').classList.remove('open'); }
 
@@ -1469,27 +1522,15 @@ document.addEventListener('touchend', endVisitDrag);
 document.addEventListener('touchcancel', function () { if (vdrag && vdrag.active) { vdrag.over = null; endVisitDrag(); } else cancelPress(); });
 document.addEventListener('mouseup', endVisitDrag);
 
-/** シフトの訪問を from → to に動かす。先に画面を動かし、保存できたらシフトの最新で描き直す */
+/** シフトの訪問を from → to に動かす。先に画面を動かし、保存は裏で順番に */
 function moveVisit(date, site, client, from, to, isUndo) {
   var local = findPlanVisit(date, site, client, from);
-  if (local) { local.time = to; local.moving = true; renderPlan(); }
-  pendingCount++;
-  setStatus();
-  api('moveVisit', { date: date, site: site, client: client, from: from, to: to }).then(function (data) {
-    if (plan.date === date) {
-      plan.data = data;
-      storeJson(planCacheKey(date), { data: data, comments: plan.comments });
-      renderPlan();
-    }
-    if (isUndo) toast('元の時間に戻しました');
-    else toast(client + (/(さん|様|ちゃん|くん)$/.test(client) ? '' : 'さん') + 'を ' + to + ' に動かしました', '元に戻す', function () { moveVisit(date, site, client, to, from, true); });
-  }).catch(function (err) {
-    toast(err.message || '動かせませんでした');
-    if (plan.date === date) loadPlan(date);
-  }).then(function () {
-    pendingCount--;
-    setStatus();
-  });
+  if (local) { local.time = to; local.pending = true; afterLocalChange(date); }
+  if (isUndo) toast('元の時間に戻しました');
+  else toast(client + (/(さん|様|ちゃん|くん)$/.test(client) ? '' : 'さん') + 'を ' + to + ' に動かしました', '元に戻す', function () { moveVisit(date, site, client, to, from, true); });
+  planOp('moveVisit', function () {
+    return { date: date, site: site, client: client, from: from, to: to };
+  }, date, function (res) { return res; });
 }
 function findPlanVisit(date, site, client, time) {
   if (!plan.data || plan.data.date !== date) return null;
