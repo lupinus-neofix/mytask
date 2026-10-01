@@ -132,6 +132,14 @@ input, textarea { font: inherit; color: var(--ink); }
 .visit.cancel .vname { text-decoration: line-through; }
 .visit .tag { font-size: 11px; font-weight: 600; }
 .plan-foot { font-size: 11px; color: var(--muted); text-align: center; margin-top: 10px; }
+.visit { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.visit.lifted { opacity: .3; }
+.visit.ghost { position: fixed; z-index: 60; pointer-events: none; margin: 0; box-shadow: 0 10px 24px rgba(0,0,0,.2); transform-origin: center; }
+.tl.dragging .tl-row { transition: background .1s; }
+.tl.dragging .tl-row.drop-ok { background: var(--c-pill); border-radius: 8px; }
+.tl.dragging .tl-row.drop-ok .tl-time { color: var(--c-ink); font-weight: 700; }
+.tl.dragging .tl-row.drop-ng { background: var(--danger-bg); border-radius: 8px; }
+.visit.moving { opacity: .6; }
 .v-block { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-top: 6px; font-size: 14px; background: var(--card); white-space: pre-wrap; word-break: break-word; }
 .v-block .who { font-size: 12px; color: var(--sub); margin-top: 4px; white-space: normal; }
 .v-block .reply { font-size: 13px; color: var(--sub); border-left: 2px solid var(--line-strong); padding-left: 8px; margin-top: 6px; }
@@ -963,9 +971,11 @@ function loadComments(date, my) {
 function commentsAt(site, ref) {
   return (plan.comments || []).filter(function (c) { return c.site === site && c.ref === ref; });
 }
+var planRenderPending = false;
 function renderPlan() {
   var host = $('planBody');
   if (!host) return;
+  if (vdrag && vdrag.active) { planRenderPending = true; return; }   // 動かしている最中は描き直さない
   host.innerHTML = '';
   var date = plan.date || ymd(new Date());
 
@@ -1016,6 +1026,7 @@ function renderPlan() {
     if (s.visits.length || !s.off) box.appendChild(timelineEl(s));
     host.appendChild(box);
   });
+  if (canMoveOn(date)) host.appendChild(el('div', 'plan-foot', '訪問を長押しして上下に動かすと、時間を変えられます（自分の行・空いている時間だけ）'));
   host.appendChild(el('div', 'plan-foot', '週間シフトから読んでいます。シフトを直してから反映まで最大5分ほどかかります'));
 }
 function timelineEl(s) {
@@ -1028,6 +1039,7 @@ function timelineEl(s) {
   slots.forEach(function (t) {
     var vs = byTime[t] || [];
     var row = el('div', 'tl-row' + (vs.length ? ' has' : ''));
+    row.dataset.time = t;
     row.appendChild(el('div', 'tl-time', t));
     var cell = el('div');
     vs.forEach(function (v) { cell.appendChild(visitEl(s, v)); });
@@ -1045,7 +1057,9 @@ function visitEl(s, v) {
   if (commentsAt(s.site, v.ref).length) icons.insertAdjacentHTML('beforeend', COMMENT_SVG);
   if (icons.childNodes.length) b.appendChild(icons);
   if (v.cancelled) b.appendChild(el('span', 'tag', 'キャンセル'));
-  b.onclick = function () { openVisit(s, v); };
+  if (v.moving) b.classList.add('moving');
+  b.onclick = function () { if (!suppressClick) openVisit(s, v); };
+  if (canMoveOn(plan.date)) attachVisitDrag(b, s, v);
   return b;
 }
 function openVisit(s, v) {
@@ -1072,6 +1086,156 @@ function openVisit(s, v) {
   $('visitPanel').classList.add('open');
 }
 function closeVisit() { $('visitPanel').classList.remove('open'); }
+
+// ---- 予定：長押しして上下に動かし、訪問の時間を変える（shift_editors の人だけ） ----
+var vdrag = null;          // 押している最中・動かしている最中の状態
+var suppressClick = false; // 動かした直後のクリックで詳細を開かない
+var lastVisitDrag = 0;
+function canMoveOn(date) {
+  return !!(state.me && state.me.canEditShift && date && date >= ymd(new Date()));
+}
+function attachVisitDrag(btn, s, v) {
+  btn.addEventListener('touchstart', function (e) {
+    if (e.touches.length !== 1) return;
+    beginPress(btn, s, v, e.touches[0].clientX, e.touches[0].clientY, 'touch');
+  }, { passive: true });
+  btn.addEventListener('mousedown', function (e) {
+    if (e.button !== 0) return;
+    beginPress(btn, s, v, e.clientX, e.clientY, 'mouse');
+  });
+}
+function beginPress(btn, s, v, x, y, kind) {
+  if (vdrag) return;
+  vdrag = { btn: btn, site: s, visit: v, x0: x, y0: y, x: x, y: y, kind: kind, active: false, over: null };
+  // スマホは長押し、PCは押したまま少し動かすと持ち上がる
+  if (kind === 'touch') vdrag.timer = setTimeout(startVisitDrag, 380);
+}
+function cancelPress() {
+  if (vdrag && !vdrag.active) { clearTimeout(vdrag.timer); vdrag = null; }
+}
+function startVisitDrag() {
+  if (!vdrag || vdrag.active) return;
+  var s = vdrag.site, v = vdrag.visit;
+  if (commentsAt(s.site, v.ref).length && !state.me.moveWithComments) {
+    vdrag = null;
+    toast('コメントが付いている訪問は、今はシフトで直接動かしてください');
+    return;
+  }
+  vdrag.active = true;
+  suppressClick = true;
+  if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) { /* 無視 */ } }
+  var r = vdrag.btn.getBoundingClientRect();
+  vdrag.rect = r;
+  var g = vdrag.btn.cloneNode(true);
+  g.classList.add('ghost');
+  g.style.width = r.width + 'px';
+  g.style.left = r.left + 'px';
+  g.style.top = r.top + 'px';
+  document.body.appendChild(g);
+  vdrag.ghost = g;
+  vdrag.btn.classList.add('lifted');
+  vdrag.tl = vdrag.btn.closest('.tl');
+  vdrag.tl.classList.add('dragging');
+  moveGhost();
+  requestAnimationFrame(autoScrollStep);
+}
+function moveGhost() {
+  if (!vdrag || !vdrag.active) return;
+  vdrag.ghost.style.transform = 'translate(' + (vdrag.x - vdrag.x0) + 'px,' + (vdrag.y - vdrag.y0) + 'px) scale(1.03)';
+  var hit = document.elementFromPoint(vdrag.x, vdrag.y);
+  var row = hit && hit.closest ? hit.closest('.tl-row') : null;
+  if (row && row.parentNode !== vdrag.tl) row = null;
+  if (row === vdrag.over) return;
+  if (vdrag.over) vdrag.over.classList.remove('drop-ok', 'drop-ng');
+  vdrag.over = row;
+  if (!row || row.dataset.time === vdrag.visit.time) return;
+  row.classList.add(row.classList.contains('has') ? 'drop-ng' : 'drop-ok');
+}
+function autoScrollStep() {
+  if (!vdrag || !vdrag.active) return;
+  var edge = 80, step = 0;
+  if (vdrag.y < edge + 60) step = -12;            // 上のタブ・見出しの下あたり
+  else if (vdrag.y > window.innerHeight - edge) step = 12;
+  if (step) { window.scrollBy(0, step); moveGhost(); }
+  requestAnimationFrame(autoScrollStep);
+}
+function endVisitDrag() {
+  if (!vdrag) return;
+  if (!vdrag.active) { cancelPress(); return; }
+  var d = vdrag;
+  vdrag = null;
+  lastVisitDrag = Date.now();
+  d.ghost.remove();
+  d.btn.classList.remove('lifted');
+  d.tl.classList.remove('dragging');
+  if (d.over) d.over.classList.remove('drop-ok', 'drop-ng');
+  setTimeout(function () { suppressClick = false; }, 60);
+  if (planRenderPending) { planRenderPending = false; renderPlan(); }
+  var row = d.over;
+  if (!row || row.dataset.time === d.visit.time) return;
+  if (row.classList.contains('has')) { toast(row.dataset.time + ' はすでに埋まっています'); return; }
+  moveVisit(plan.date, d.site.site, d.visit.client, d.visit.time, row.dataset.time, false);
+}
+document.addEventListener('touchmove', function (e) {
+  if (!vdrag) return;
+  var t = e.touches[0];
+  if (!vdrag.active) {
+    if (Math.abs(t.clientX - vdrag.x0) > 8 || Math.abs(t.clientY - vdrag.y0) > 8) cancelPress();   // ふつうのスクロール
+    return;
+  }
+  e.preventDefault();
+  vdrag.x = t.clientX;
+  vdrag.y = t.clientY;
+  moveGhost();
+}, { passive: false });
+document.addEventListener('mousemove', function (e) {
+  if (!vdrag) return;
+  if (!vdrag.active) {
+    if (Math.abs(e.clientX - vdrag.x0) < 6 && Math.abs(e.clientY - vdrag.y0) < 6) return;
+    startVisitDrag();
+    if (!vdrag) return;
+  }
+  vdrag.x = e.clientX;
+  vdrag.y = e.clientY;
+  moveGhost();
+});
+document.addEventListener('touchend', endVisitDrag);
+document.addEventListener('touchcancel', function () { if (vdrag && vdrag.active) { vdrag.over = null; endVisitDrag(); } else cancelPress(); });
+document.addEventListener('mouseup', endVisitDrag);
+
+/** シフトの訪問を from → to に動かす。先に画面を動かし、保存できたらシフトの最新で描き直す */
+function moveVisit(date, site, client, from, to, isUndo) {
+  var local = findPlanVisit(date, site, client, from);
+  if (local) { local.time = to; local.moving = true; renderPlan(); }
+  pendingCount++;
+  setStatus();
+  api('moveVisit', { date: date, site: site, client: client, from: from, to: to }).then(function (data) {
+    if (plan.date === date) {
+      plan.data = data;
+      storeJson(planCacheKey(date), { data: data, comments: plan.comments });
+      renderPlan();
+    }
+    if (isUndo) toast('元の時間に戻しました');
+    else toast(client + (/(さん|様|ちゃん|くん)$/.test(client) ? '' : 'さん') + 'を ' + to + ' に動かしました', '元に戻す', function () { moveVisit(date, site, client, to, from, true); });
+  }).catch(function (err) {
+    toast(err.message || '動かせませんでした');
+    if (plan.date === date) loadPlan(date);
+  }).then(function () {
+    pendingCount--;
+    setStatus();
+  });
+}
+function findPlanVisit(date, site, client, time) {
+  if (!plan.data || plan.data.date !== date) return null;
+  for (var i = 0; i < plan.data.sites.length; i++) {
+    var s = plan.data.sites[i];
+    if (s.site !== site) continue;
+    for (var j = 0; j < s.visits.length; j++) {
+      if (s.visits[j].client === client && s.visits[j].time === time) return s.visits[j];
+    }
+  }
+  return null;
+}
 
 // ---- 完了済み ----
 function renderDone() {
@@ -1178,7 +1342,7 @@ document.addEventListener('touchmove', function (e) {
     sy = e.touches[0].clientY;
   }, { passive: true });
   board.addEventListener('touchend', function (e) {
-    if (!tracking || dragging || !mobileMq.matches) return;
+    if (!tracking || dragging || vdrag || Date.now() - lastVisitDrag < 500 || !mobileMq.matches) return;
     tracking = false;
     if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
     var dx = e.changedTouches[0].clientX - sx;
