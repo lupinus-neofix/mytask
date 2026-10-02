@@ -193,6 +193,7 @@ input, textarea { font: inherit; color: var(--ink); }
 .counter { font-size: 11px; color: var(--muted); text-align: right; margin-top: 2px; }
 .memo-head { display: flex; align-items: center; justify-content: space-between; }
 .memo-full-btn { font-size: 12px; color: var(--sub); padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line-strong); }
+#detail.memo-full .f-memo[readonly] { background: var(--page); border-color: transparent; padding-left: 2px; }
 .memo-title { display: none; font-size: 15px; font-weight: 600; margin: 0 0 8px; word-break: break-word; }
 /* メモを全画面で読む・書く */
 #detail.memo-full { align-items: stretch; }
@@ -1086,10 +1087,20 @@ function closeDetail(save) {
 function updateCounter() { $('dCount').textContent = $('dMemo').value.length + ' / 2000'; }
 /** メモを全画面にする／戻す。書いた内容はそのまま（閉じると保存） */
 function setMemoFull(on) {
+  var ta = $('dMemo');
   $('detail').classList.toggle('memo-full', on);
   $('dMemoFull').textContent = on ? '⤡ 戻す' : '⤢ 全画面';
   $('dMemoTitle').textContent = on ? $('dTitle').value : '';
-  if (on) $('dMemo').focus();
+  // 全画面は、まず読むだけ（キーボードを出さない）。文章をタップしたら書ける
+  ta.readOnly = !!on;
+  if (on) { ta.blur(); ta.scrollTop = 0; }
+}
+/** 全画面で読んでいるときに文章をタップしたら、書けるようにしてキーボードを出す（スクロールでは切り替えない） */
+function editMemoFull() {
+  var ta = $('dMemo');
+  if (!ta.readOnly || !$('detail').classList.contains('memo-full')) return;
+  ta.readOnly = false;
+  ta.focus();
 }
 function autoGrow(ta) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; }
 
@@ -1869,6 +1880,7 @@ $('dTitle').oninput = function () { autoGrow(this); };
 $('dTitle').onkeydown = function (e) { if (e.key === 'Enter') e.preventDefault(); };
 $('dMemo').oninput = updateCounter;
 $('dMemoFull').onclick = function () { setMemoFull(!$('detail').classList.contains('memo-full')); };
+$('dMemo').addEventListener('click', editMemoFull);
 $('dDueClear').onclick = function () { $('dDue').value = ''; };
 $('dCloseBottom').onclick = function () { closeDetail(true); };
 $('dPin').onclick = function () { if (editing) togglePin(editing.id); };
