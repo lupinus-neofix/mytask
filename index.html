@@ -398,7 +398,9 @@ function storeJson(k, v) {
 }
 
 // ---- サーバー呼び出し ----
-function api(action, args) {
+// 読むだけの問い合わせは、Googleの一時的なエラーページが返ってきたら1回だけやり直す（書き込みは二重にならないようやり直さない）
+var API_SAFE_RETRY = { login: 1, board: 1, schedule: 1, comments: 1, config: 1 };
+function api(action, args, retried) {
   if (!CONFIG.apiUrl) return Promise.reject(new Error('管理者の設定（config.js の apiUrl）がまだです'));
   return fetch(CONFIG.apiUrl, {
     method: 'POST',
@@ -406,7 +408,13 @@ function api(action, args) {
     body: JSON.stringify({ action: action, token: store('mt_token') || '', args: args || {} }),
     redirect: 'follow'
   }).then(function (r) {
-    return r.json();
+    return r.text().then(function (text) {
+      try { return JSON.parse(text); } catch (e) {
+        var err = new Error('受付の応答が読めませんでした（' + r.status + ' ' + apiHint(text) + '）。少し時間をおいて、もう一度お試しください');
+        err.code = 'bad_response';
+        throw err;
+      }
+    });
   }, function () {
     throw new Error('通信できませんでした。電波の良いところで、もう一度お試しください');
   }).then(function (res) {
@@ -415,7 +423,19 @@ function api(action, args) {
     err.code = res.code;
     if (res.code === 'auth' || res.code === 'not_registered') authLost(err);
     throw err;
+  }).catch(function (err) {
+    if (err.code === 'bad_response' && !retried && API_SAFE_RETRY[action]) {
+      return new Promise(function (ok) { setTimeout(ok, 1200); }).then(function () { return api(action, args, true); });
+    }
+    throw err;
   });
+}
+/** JSONでない応答（Googleのエラーページなど）から、原因の手がかりになる短い文字を取り出す */
+function apiHint(text) {
+  var t = String(text || '');
+  var title = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(t);
+  var s = (title ? title[1] : t.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
+  return s.slice(0, 60) || '空の応答';
 }
 function realId(id) { return idMap[id] || id; }
 function enqueue(thunk) {
