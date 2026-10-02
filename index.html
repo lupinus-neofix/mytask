@@ -191,6 +191,18 @@ input, textarea { font: inherit; color: var(--ink); }
 .ghost { padding: 9px 12px; border-radius: 10px; color: var(--sub); font-size: 14px; }
 .f-memo { width: 100%; min-height: 120px; resize: vertical; line-height: 1.6; }
 .counter { font-size: 11px; color: var(--muted); text-align: right; margin-top: 2px; }
+.memo-head { display: flex; align-items: center; justify-content: space-between; }
+.memo-full-btn { font-size: 12px; color: var(--sub); padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line-strong); }
+.memo-title { display: none; font-size: 15px; font-weight: 600; margin: 0 0 8px; word-break: break-word; }
+/* メモを全画面で読む・書く */
+#detail.memo-full { align-items: stretch; }
+#detail.memo-full .sheet { max-width: none; width: 100%; height: 100vh; height: 100dvh; max-height: none; border-radius: 0; display: flex; flex-direction: column;
+  padding-top: calc(12px + var(--safe-top)); }
+#detail.memo-full .sheet > *:not(.memo-zone) { display: none; }
+#detail.memo-full .memo-zone { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#detail.memo-full .memo-title { display: block; }
+#detail.memo-full .memo-head { margin-top: 0; }
+#detail.memo-full .f-memo { flex: 1; min-height: 0; resize: none; font-size: 16px; line-height: 1.8; }
 .actions { display: flex; gap: 8px; margin-top: 20px; }
 .btn { flex: 1; padding: 12px; border-radius: 12px; border: 1px solid var(--line-strong); font-weight: 600; text-align: center; }
 .btn.primary { background: var(--ink); color: var(--page); border-color: var(--ink); }
@@ -316,9 +328,12 @@ setTimeout(function () {
       <input type="date" class="field f-due" id="dDue">
       <button class="ghost" id="dDueClear">消す</button>
     </div>
-    <div class="label">メモ（任意）</div>
-    <textarea class="field f-memo" id="dMemo" maxlength="2000"></textarea>
-    <div class="counter" id="dCount"></div>
+    <div class="memo-zone">
+      <div class="memo-title" id="dMemoTitle"></div>
+      <div class="label memo-head"><span>メモ（任意）</span><button class="memo-full-btn" id="dMemoFull" type="button">⤢ 全画面</button></div>
+      <textarea class="field f-memo" id="dMemo" maxlength="2000"></textarea>
+      <div class="counter" id="dCount"></div>
+    </div>
     <div class="actions">
       <button class="btn primary" id="dCloseBottom">閉じる</button>
       <button class="btn pin" id="dPin">📌 ピン留め</button>
@@ -1043,6 +1058,7 @@ function closeDetail(save) {
   var ed = editing;
   editing = null;
   $('detail').classList.remove('open');
+  setMemoFull(false);
   if (!save || !t) return;
   var title = $('dTitle').value.replace(/\s+/g, ' ').trim();
   var patch = {};
@@ -1068,6 +1084,13 @@ function closeDetail(save) {
   enqueue(function () { return api('update', { id: realId(t.id), patch: patch }); });
 }
 function updateCounter() { $('dCount').textContent = $('dMemo').value.length + ' / 2000'; }
+/** メモを全画面にする／戻す。書いた内容はそのまま（閉じると保存） */
+function setMemoFull(on) {
+  $('detail').classList.toggle('memo-full', on);
+  $('dMemoFull').textContent = on ? '⤡ 戻す' : '⤢ 全画面';
+  $('dMemoTitle').textContent = on ? $('dTitle').value : '';
+  if (on) $('dMemo').focus();
+}
 function autoGrow(ta) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; }
 
 // ---- 予定 ----
@@ -1845,6 +1868,7 @@ $('detail').onclick = function (e) { if (e.target === this) closeDetail(true); }
 $('dTitle').oninput = function () { autoGrow(this); };
 $('dTitle').onkeydown = function (e) { if (e.key === 'Enter') e.preventDefault(); };
 $('dMemo').oninput = updateCounter;
+$('dMemoFull').onclick = function () { setMemoFull(!$('detail').classList.contains('memo-full')); };
 $('dDueClear').onclick = function () { $('dDue').value = ''; };
 $('dCloseBottom').onclick = function () { closeDetail(true); };
 $('dPin').onclick = function () { if (editing) togglePin(editing.id); };
@@ -1869,6 +1893,7 @@ document.addEventListener('keydown', function (e) {
 });
 document.addEventListener('keydown', function (e) {
   if (e.key !== 'Escape') return;
+  if ($('detail').classList.contains('memo-full')) { setMemoFull(false); return; }
   if ($('detail').classList.contains('open')) closeDetail(true);
   closeTrash();
   closeVisit();
