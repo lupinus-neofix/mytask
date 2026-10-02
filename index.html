@@ -251,16 +251,18 @@ input, textarea { font: inherit; color: var(--ink); }
 
 .quick-add { display: none; }
 @media (min-width: 700px) {
-  .quick-add { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; gap: 10px; align-items: center;
-    padding: 12px 20px calc(12px + env(safe-area-inset-bottom)); background: var(--page); border-top: 1px solid var(--line); }
+  .quick-add { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom)); z-index: 20;
+    width: min(460px, calc(100% - 40px)); display: flex; flex-direction: column; gap: 8px;
+    padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.10); }
   .quick-add[hidden] { display: none; }
-  .quick-add input { flex: 1; min-width: 0; padding: 10px 14px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--card); font-size: 15px; }
-  .quick-cols { display: flex; gap: 4px; }
+  .quick-top { display: flex; align-items: center; gap: 6px; }
+  .quick-add input { width: 100%; padding: 9px 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--page); font-size: 15px; }
+  .quick-cols { display: flex; gap: 4px; flex: 1; }
   .quick-cols button { padding: 8px 12px; border-radius: 9px; font-size: 13px; font-weight: 600; color: var(--c-ink); background: transparent; border: 1.5px solid var(--line); }
   .quick-cols button.on { background: var(--c-pill); border-color: var(--c-ink); }
-  .quick-add .go { padding: 10px 18px; border-radius: 10px; background: var(--ink); color: var(--page); font-weight: 600; }
+  .quick-add .go { padding: 8px 16px; border-radius: 9px; background: var(--ink); color: var(--page); font-weight: 600; font-size: 13px; }
   .tabs { display: none; }
-  .board { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding: 4px 20px 96px; }
+  .board { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding: 4px 20px 150px; }
   .top { padding: calc(18px + var(--safe-top)) 20px 12px; }
   .col { display: block; flex: 1 1 0; min-width: 160px; max-width: 340px; }
   .col-head { display: flex; }
@@ -309,9 +311,11 @@ setTimeout(function () {
 <nav class="tabs" id="tabs" hidden></nav>
 <main class="board" id="board"><div class="loading">読み込み中…</div></main>
 <form class="quick-add" id="quickAdd" hidden autocomplete="off">
+  <div class="quick-top">
+    <div class="quick-cols" id="quickCols"></div>
+    <button type="submit" class="go">追加</button>
+  </div>
   <input type="text" id="quickInput" maxlength="200" placeholder="タスクを入力して Enter">
-  <div class="quick-cols" id="quickCols"></div>
-  <button type="submit" class="go">追加</button>
 </form>
 
 <section class="login" id="login" hidden>
