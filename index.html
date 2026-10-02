@@ -249,9 +249,18 @@ input, textarea { font: inherit; color: var(--ink); }
 .login .msg.err { color: var(--danger); background: var(--danger-bg); border-radius: 12px; padding: 12px 14px; text-align: left; }
 .login .hint { margin-top: 28px; font-size: 12px; color: var(--muted); text-align: left; line-height: 1.7; }
 
+.quick-add { display: none; }
 @media (min-width: 700px) {
+  .quick-add { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; gap: 10px; align-items: center;
+    padding: 12px 20px calc(12px + env(safe-area-inset-bottom)); background: var(--page); border-top: 1px solid var(--line); }
+  .quick-add[hidden] { display: none; }
+  .quick-add input { flex: 1; min-width: 0; padding: 10px 14px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--card); font-size: 15px; }
+  .quick-cols { display: flex; gap: 4px; }
+  .quick-cols button { padding: 8px 12px; border-radius: 9px; font-size: 13px; font-weight: 600; color: var(--c-ink); background: transparent; border: 1.5px solid var(--line); }
+  .quick-cols button.on { background: var(--c-pill); border-color: var(--c-ink); }
+  .quick-add .go { padding: 10px 18px; border-radius: 10px; background: var(--ink); color: var(--page); font-weight: 600; }
   .tabs { display: none; }
-  .board { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding: 4px 20px 60px; }
+  .board { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding: 4px 20px 96px; }
   .top { padding: calc(18px + var(--safe-top)) 20px 12px; }
   .col { display: block; flex: 1 1 0; min-width: 160px; max-width: 340px; }
   .col-head { display: flex; }
@@ -299,6 +308,11 @@ setTimeout(function () {
 </div>
 <nav class="tabs" id="tabs" hidden></nav>
 <main class="board" id="board"><div class="loading">読み込み中…</div></main>
+<form class="quick-add" id="quickAdd" hidden autocomplete="off">
+  <input type="text" id="quickInput" maxlength="200" placeholder="タスクを入力して Enter">
+  <div class="quick-cols" id="quickCols"></div>
+  <button type="submit" class="go">追加</button>
+</form>
 
 <section class="login" id="login" hidden>
   <img src="icons/icon-192.png" alt="">
@@ -480,6 +494,7 @@ function setStatus() { $('status').textContent = pendingCount > 0 ? '保存中�
 // ---- ログイン ----
 function showLogin(message, isError) {
   $('topBar').hidden = true;
+  $('quickAdd').hidden = true;
   $('tabs').hidden = true;
   $('board').hidden = true;
   $('board').innerHTML = '';
@@ -554,6 +569,8 @@ function logout() {
 function startApp() {
   $('login').hidden = true;
   $('topBar').hidden = false;
+  $('quickAdd').hidden = false;
+  renderQuickCols();
   $('tabs').hidden = false;
   $('board').hidden = false;
   updateHistoryButtons();
@@ -817,7 +834,7 @@ function closeAdd(col) {
   c.querySelector('.add').style.display = '';
   c.querySelector('.add-form').classList.remove('open');
 }
-function addTask(col, title) {
+function addTask(col, title, fromQuick) {
   var tmp = {
     id: 'tmp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
     title: title, col: col, ord: activeTasks(col).length ? activeTasks(col).slice(-1)[0].ord + 1 : 0,
@@ -826,7 +843,7 @@ function addTask(col, title) {
   record('追加');
   state.tasks.push(tmp);
   render();
-  reopenAdd(col);
+  if (!fromQuick) reopenAdd(col);   // 下の入力欄から足したときは、列の「＋新規」は開かない
   var tmpId = tmp.id;
   enqueue(function () { return api('add', { col: col, title: title }); }).then(function (saved) {
     idMap[tmpId] = saved.id;
@@ -1853,6 +1870,28 @@ document.addEventListener('touchmove', function (e) {
     if (next >= 0 && next < TABS.length) setActive(TABS[next].id);
   }, { passive: true });
 })();
+
+// ---- PCだけ：画面の下に固定した入力欄（Enterで続けて追加。入れる列は最後に選んだものを覚える） ----
+var quickCol = store('mt_quick_col') || 'now';
+function renderQuickCols() {
+  if (COLS.map(function (c) { return c.id; }).indexOf(quickCol) < 0) quickCol = 'now';
+  var box = $('quickCols');
+  box.innerHTML = '';
+  COLS.forEach(function (c) {
+    var b = el('button', c.id === quickCol ? 'on' : '', c.short);
+    b.type = 'button';
+    b.dataset.col = c.id;
+    b.onclick = function () { quickCol = c.id; store('mt_quick_col', c.id); renderQuickCols(); $('quickInput').focus(); };
+    box.appendChild(b);
+  });
+}
+$('quickAdd').onsubmit = function (e) {
+  e.preventDefault();
+  var inp = $('quickInput');
+  var title = inp.value.replace(/\s+/g, ' ').trim();
+  if (title) { inp.value = ''; addTask(quickCol, title, true); }
+  inp.focus();
+};
 
 // ---- つなぎ込み ----
 $('addTop').onclick = function () { openAdd(mobileMq.matches && state.active !== 'plan' ? state.active : 'now'); };
