@@ -24,6 +24,7 @@
 [data-col="next"]    { --c-bg: #fcf8ea; --c-pill: #f6e6b4; --c-ink: #7a5a10; --c-add: #b0830f; }
 [data-col="someday"] { --c-bg: #eef5fc; --c-pill: #d5e6f8; --c-ink: #2b5d8c; --c-add: #3f82c4; }
 [data-col="plan"]    { --c-bg: #f6f2fc; --c-pill: #e7dbf6; --c-ink: #5f3f8c; --c-add: #9a6fd0; }
+[data-col="cal"]     { --c-bg: #eef6f0; --c-pill: #d5ebdc; --c-ink: #2f6b45; --c-add: #3f8f5c; }
 @media (prefers-color-scheme: dark) {
   :root {
     --page: #1c1b1a; --card: #2a2927; --ink: #ecebe8; --sub: #b3b0aa; --muted: #85827c;
@@ -35,6 +36,7 @@
   [data-col="next"]    { --c-bg: #2a271d; --c-pill: #5a4a1c; --c-ink: #f3dc9a; --c-add: #e2bd55; }
   [data-col="someday"] { --c-bg: #1f2630; --c-pill: #24456a; --c-ink: #c4dcf5; --c-add: #7fb2e6; }
   [data-col="plan"]    { --c-bg: #26222e; --c-pill: #46345f; --c-ink: #ddcdf3; --c-add: #b99be3; }
+  [data-col="cal"]     { --c-bg: #1f2a23; --c-pill: #2b4433; --c-ink: #b9e2c4; --c-add: #7cc596; }
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--page); color: var(--ink); overscroll-behavior: none; }   /* 上に引っぱっても画面が下がらないように */
@@ -54,6 +56,30 @@ input, textarea { font: inherit; color: var(--ink); }
 html.space-private, body.space-private { --page: #f3f6f1; }
 body.space-private .title-btn { color: #2f6b45; }
 body.space-private .col[data-col="plan"] { display: none !important; }
+body:not(.space-private) .col[data-col="cal"] { display: none !important; }
+/* カレンダー（プライベート） */
+.cal-nav { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
+.cal-nav .icon-btn { color: var(--c-ink); }
+.cal-title { flex: 1; text-align: center; font-weight: 600; font-size: 15px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 6px; }
+.cal-wd { font-size: 11px; color: var(--muted); text-align: center; padding: 2px 0 4px; }
+.cal-wd.sun, .cal-day.sun .n { color: #c0504d; }
+.cal-wd.sat, .cal-day.sat .n { color: #3f72b0; }
+.cal-day { min-height: 46px; border-radius: 8px; padding: 4px 2px; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 13px; }
+.cal-day.other { opacity: .35; }
+.cal-day.today .n { background: var(--c-add); color: #fff !important; border-radius: 50%; width: 22px; height: 22px; display: grid; place-items: center; }
+.cal-day.sel { background: var(--c-pill); }
+.cal-dots { display: flex; gap: 2px; flex-wrap: wrap; justify-content: center; max-width: 100%; }
+.cal-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--c-add); }
+.cal-dot.task { background: transparent; border: 1.5px solid var(--c-add); }
+.cal-list { margin-top: 12px; }
+.cal-list-head { font-size: 14px; font-weight: 600; color: var(--c-ink); margin: 0 2px 6px; }
+.cal-item { display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; margin-bottom: 6px; font-size: 14px; }
+.cal-item .t { font-variant-numeric: tabular-nums; color: var(--c-ink); font-weight: 600; min-width: 42px; }
+.cal-item .ttl { flex: 1; word-break: break-word; }
+.cal-item .sub { font-size: 12px; color: var(--sub); }
+.cal-item.pending { opacity: .55; }
+.cal-tag { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 5px; border: 1px solid var(--c-add); color: var(--c-ink); white-space: nowrap; }
 @media (prefers-color-scheme: dark) { html.space-private, body.space-private { --page: #1b221d; } body.space-private .title-btn { color: #9fd3ad; } }
 .space-tag { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #d9ecdf; color: #2f6b45; margin-left: 6px; }
 @media (prefers-color-scheme: dark) { .space-tag { background: #2b4433; color: #b9e2c4; } }
@@ -78,7 +104,7 @@ body.space-private .col[data-col="plan"] { display: none !important; }
 .tabs.dragging .tab.active { border-style: solid; }
 .tabs.dragging { overflow: visible; z-index: 100002; }   /* 持ち上げたカードより手前に出して、大きくなったタブを見せる */
 .tabs.dragging .tab.drop-over { background: var(--c-ink); color: var(--c-pill); border-style: solid; transform: scale(1.25); box-shadow: 0 6px 16px rgba(0,0,0,.18); position: relative; z-index: 1; }
-.tabs.dragging .tab[data-col="plan"] { opacity: .3; border-style: solid; border-color: transparent; }
+.tabs.dragging .tab[data-col="plan"], .tabs.dragging .tab[data-col="cal"] { opacity: .3; border-style: solid; border-color: transparent; }
 
 .board { padding: 0 16px 120px; }
 .col { display: none; background: var(--c-bg); border-radius: 16px; padding: 12px; }
@@ -383,6 +409,31 @@ setTimeout(function () {
   </div>
 </div>
 
+<div class="overlay" id="eventPanel">
+  <div class="sheet">
+    <div class="sheet-head">
+      <button class="icon-btn" id="evClose" aria-label="閉じる">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+      </button>
+      <span class="grow" id="evHead"></span>
+    </div>
+    <input class="f-title" id="evTitle" maxlength="100" placeholder="予定の名前" style="font-size:19px">
+    <div class="label">日付</div>
+    <input type="date" class="field f-due" id="evDate" style="width:100%">
+    <div class="label">時刻（任意）</div>
+    <div class="row">
+      <input type="time" class="field f-due" id="evTime">
+      <button class="ghost" id="evTimeClear">消す</button>
+    </div>
+    <div class="label">メモ（任意）</div>
+    <textarea class="field f-memo" id="evMemo" maxlength="2000"></textarea>
+    <div class="actions">
+      <button class="btn primary" id="evSave">保存</button>
+      <button class="btn danger" id="evDel">削除</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="trashPanel">
   <div class="sheet">
     <div class="sheet-head">
@@ -411,8 +462,10 @@ var COLS = [
 ];
 var PLAN = { id: 'plan', name: '予定', short: '予定' };
 var TABS = COLS.concat([PLAN]);
+var CAL = { id: 'cal', name: 'カレンダー', short: 'カレンダー' };
+var PRIVATE_TABS = COLS.concat([CAL]);
 /** 表示中のタブ（プライベートには予定タブが無い） */
-function currentTabs() { return state.space === 'private' ? COLS : TABS; }
+function currentTabs() { return state.space === 'private' ? PRIVATE_TABS : TABS; }
 function inSpace(t) { return (t.space || 'work') === state.space; }
 var CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 var MEMO_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14v16H5z"/><path d="M9 9h6M9 13h6M9 17h3"/></svg>';
@@ -597,6 +650,7 @@ function startApp() {
   }
   started = true;
   load();
+  if (state.space === 'private') loadCal(cal.month);
   if (!plan.date) plan.date = ymd(new Date());
   if (state.active === 'plan' || !mobileMq.matches) loadPlan(plan.date);
 }
@@ -641,6 +695,8 @@ function render() {
     col.querySelector('.empty').style.display = items.length ? 'none' : '';
   });
   board.querySelector('.col[data-col="plan"]').classList.toggle('active', state.active === 'plan');
+  board.querySelector('.col[data-col="cal"]').classList.toggle('active', state.active === 'cal');
+  if (state.space === 'private') renderCal();
   renderMenuFoot();
   if (pendingCount === 0) saveBoardCache();
 }
@@ -651,7 +707,7 @@ function renderTabs() {
     var b = el('button', 'tab' + (c.id === state.active ? ' active' : ''));
     b.dataset.col = c.id;
     b.appendChild(document.createTextNode(c.short));
-    if (c.id !== 'plan') b.appendChild(el('span', 'n', String(activeTasks(c.id).length)));
+    if (c.id !== 'plan' && c.id !== 'cal') b.appendChild(el('span', 'n', String(activeTasks(c.id).length)));
     b.onclick = function () { setActive(c.id); };
     tabs.appendChild(b);
   });
@@ -742,6 +798,15 @@ function buildColumns() {
   body.id = 'planBody';
   pc.appendChild(body);
   board.appendChild(pc);
+  var cc = el('section', 'col');
+  cc.dataset.col = 'cal';
+  var chd = el('div', 'col-head');
+  chd.appendChild(el('span', 'pill', CAL.name));
+  cc.appendChild(chd);
+  var cb = el('div');
+  cb.id = 'calBody';
+  cc.appendChild(cb);
+  board.appendChild(cc);
   renderPlan();
 }
 function cardEl(t) {
@@ -820,6 +885,8 @@ function setSpace(space) {
   store('mt_space', state.space);
   applySpaceLook();
   if (state.space === 'private' && state.active === 'plan') state.active = 'now';
+  if (state.space === 'work' && state.active === 'cal') state.active = 'now';
+  if (state.space === 'private') loadCal(cal.month);
   render();
   if ($('trashPanel').classList.contains('open')) renderTrash();
   toast(state.space === 'private' ? 'プライベートに切り替えました' : '仕事のタスクに切り替えました');
@@ -836,6 +903,7 @@ function setActive(col) {
   state.active = col;
   store('mt_active', col);
   render();
+  if (col === 'cal') loadCal(cal.month);
   if (col === 'plan') {
     if (!plan.date) plan.date = ymd(new Date());
     if (!plan.data || plan.data.date !== plan.date) loadPlan(plan.date);
@@ -1868,7 +1936,7 @@ function tabAt(pos) {
   if (!pos || !mobileMq.matches) return null;
   var hit = document.elementFromPoint(pos.x, pos.y);
   var tab = hit && hit.closest ? hit.closest('.tab') : null;
-  return tab && tab.dataset.col !== 'plan' ? tab : null;
+  return tab && tab.dataset.col !== 'plan' && tab.dataset.col !== 'cal' ? tab : null;
 }
 function markDropTab(tab) {
   Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (t) {
@@ -1907,6 +1975,174 @@ document.addEventListener('touchmove', function (e) {
   }, { passive: true });
 })();
 
+// ---- カレンダー（プライベート）：アプリの中だけの1か月の予定。プライベートのタスクの期限も出す ----
+var cal = { month: ymd(new Date()).slice(0, 7), selected: ymd(new Date()), events: [], loadedKey: '' };
+var evEditing = null;   // 編集中の予定（新規なら {id: ''}）
+function calGrid(month) {   // その月を表示する6週ぶんの日付
+  var p = month.split('-').map(Number);
+  var first = new Date(p[0], p[1] - 1, 1);
+  var start = new Date(p[0], p[1] - 1, 1 - first.getDay());
+  var days = [];
+  for (var i = 0; i < 42; i++) days.push(ymd(new Date(start.getFullYear(), start.getMonth(), start.getDate() + i)));
+  return days;
+}
+function addMonth(month, n) {
+  var p = month.split('-').map(Number);
+  var d = new Date(p[0], p[1] - 1 + n, 1);
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1);
+}
+function loadCal(month) {
+  cal.month = month;
+  var days = calGrid(month), key = days[0] + '_' + days[41];
+  var cached = storeJson('mt_cal_' + month);
+  if (cached && cal.loadedKey !== key) { cal.events = cached; }
+  cal.loadedKey = key;
+  renderCal();
+  api('events', { from: days[0], to: days[41] }).then(function (list) {
+    if (cal.month !== month) return;
+    var pending = cal.events.filter(function (e) { return e.pending; });
+    cal.events = (list || []).concat(pending.filter(function (p) { return !(list || []).some(function (x) { return x.id === p.id; }); }));
+    storeJson('mt_cal_' + month, list || []);
+    renderCal();
+  }).catch(function (err) { if (err.code !== 'auth') toast(err.message); });
+}
+function calTasksOn(day) {
+  return state.tasks.filter(function (t) { return t.due === day && !t.done && !t.deleted && (t.space || 'work') === 'private'; });
+}
+function calEventsOn(day) {
+  return cal.events.filter(function (e) { return e.date === day; })
+    .sort(function (a, b) { return (a.time || '') < (b.time || '') ? -1 : (a.time || '') > (b.time || '') ? 1 : 0; });
+}
+function renderCal() {
+  var host = $('calBody');
+  if (!host) return;
+  host.innerHTML = '';
+  var p = cal.month.split('-').map(Number);
+  var today = ymd(new Date());
+  var nav = el('div', 'cal-nav');
+  var prev = el('button', 'icon-btn'); prev.innerHTML = CHEV_L; prev.setAttribute('aria-label', '前の月');
+  prev.onclick = function () { loadCal(addMonth(cal.month, -1)); };
+  var next = el('button', 'icon-btn'); next.innerHTML = CHEV_R; next.setAttribute('aria-label', '次の月');
+  next.onclick = function () { loadCal(addMonth(cal.month, 1)); };
+  nav.appendChild(prev);
+  nav.appendChild(el('div', 'cal-title', p[0] + '年' + p[1] + '月'));
+  nav.appendChild(next);
+  if (cal.month !== today.slice(0, 7)) {
+    var tb = el('button', 'plan-today', '今日');
+    tb.onclick = function () { cal.selected = today; loadCal(today.slice(0, 7)); };
+    nav.appendChild(tb);
+  }
+  host.appendChild(nav);
+
+  var grid = el('div', 'cal-grid');
+  ['日', '月', '火', '水', '木', '金', '土'].forEach(function (w, i) { grid.appendChild(el('div', 'cal-wd' + (i === 0 ? ' sun' : i === 6 ? ' sat' : ''), w)); });
+  calGrid(cal.month).forEach(function (day, i) {
+    var cls = 'cal-day' + (day.slice(0, 7) !== cal.month ? ' other' : '') + (day === today ? ' today' : '') +
+      (day === cal.selected ? ' sel' : '') + (i % 7 === 0 ? ' sun' : i % 7 === 6 ? ' sat' : '');
+    var cell = el('button', cls);
+    cell.appendChild(el('span', 'n', String(Number(day.slice(8)))));
+    var dots = el('span', 'cal-dots');
+    calEventsOn(day).slice(0, 4).forEach(function () { dots.appendChild(el('span', 'cal-dot')); });
+    calTasksOn(day).slice(0, 3).forEach(function () { dots.appendChild(el('span', 'cal-dot task')); });
+    cell.appendChild(dots);
+    cell.onclick = function () {
+      cal.selected = day;
+      if (day.slice(0, 7) !== cal.month) loadCal(day.slice(0, 7)); else renderCal();
+    };
+    grid.appendChild(cell);
+  });
+  host.appendChild(grid);
+
+  var list = el('div', 'cal-list');
+  list.appendChild(el('div', 'cal-list-head', fmtMd(cal.selected) + (relDay(cal.selected) ? '　' + relDay(cal.selected) : '')));
+  var evs = calEventsOn(cal.selected), tks = calTasksOn(cal.selected);
+  if (!evs.length && !tks.length) list.appendChild(el('div', 'note', '予定はありません'));
+  evs.forEach(function (e) {
+    var b = el('button', 'cal-item' + (e.pending ? ' pending' : ''));
+    b.appendChild(el('span', 't', e.time || '終日'));
+    var tt = el('span', 'ttl', e.title);
+    if (e.memo) tt.appendChild(el('div', 'sub', e.memo.split('\n')[0]));
+    b.appendChild(tt);
+    b.onclick = function () { if (!e.pending) openEvent(e); };
+    list.appendChild(b);
+  });
+  tks.forEach(function (t) {
+    var b = el('button', 'cal-item');
+    b.appendChild(el('span', 'cal-tag', '期限'));
+    b.appendChild(el('span', 'ttl', t.title));
+    b.onclick = function () { openDetail(t.id); };
+    list.appendChild(b);
+  });
+  var add = el('button', 'add', '＋ 予定を追加');
+  add.style.marginTop = '4px';
+  add.onclick = function () { openEvent(null); };
+  list.appendChild(add);
+  host.appendChild(list);
+}
+function openEvent(e) {
+  evEditing = e ? { id: e.id } : { id: '' };
+  $('evHead').textContent = e ? '予定を直す' : '予定を追加';
+  $('evTitle').value = e ? e.title : '';
+  $('evDate').value = e ? e.date : cal.selected;
+  $('evTime').value = e ? (e.time || '') : '';
+  $('evMemo').value = e ? (e.memo || '') : '';
+  $('evDel').hidden = !e;
+  $('evDel').classList.remove('armed');
+  $('evDel').textContent = '削除';
+  $('eventPanel').classList.add('open');
+  if (!e) setTimeout(function () { $('evTitle').focus(); }, 50);
+}
+function closeEvent() { $('eventPanel').classList.remove('open'); evEditing = null; }
+function saveEvent() {
+  var title = $('evTitle').value.replace(/\s+/g, ' ').trim();
+  if (!title) { $('evTitle').focus(); return; }
+  var data = { title: title, date: $('evDate').value || cal.selected, time: $('evTime').value || '', memo: $('evMemo').value };
+  var ed = evEditing;
+  closeEvent();
+  if (!ed.id) {
+    var tmp = { id: 'tmp_' + Date.now().toString(36), title: data.title, date: data.date, time: data.time, memo: data.memo, pending: true };
+    cal.events.push(tmp);
+    cal.selected = data.date;
+    renderCal();
+    enqueue(function () { return api('addEvent', data); }).then(function (saved) {
+      var i = cal.events.indexOf(tmp);
+      if (i >= 0) cal.events[i] = saved; else cal.events.push(saved);
+      storeJson('mt_cal_' + cal.month, cal.events.filter(function (x) { return !x.pending; }));
+      renderCal();
+    }, function () { cal.events = cal.events.filter(function (x) { return x !== tmp; }); renderCal(); });
+    toast('予定を追加しました');
+  } else {
+    var cur = cal.events.filter(function (x) { return x.id === ed.id; })[0];
+    var before = cur ? JSON.parse(JSON.stringify(cur)) : null;
+    if (cur) { cur.title = data.title; cur.date = data.date; cur.time = data.time; cur.memo = data.memo; }
+    cal.selected = data.date;
+    renderCal();
+    enqueue(function () { return api('updateEvent', { id: ed.id, patch: data }); }).catch(function () {
+      if (cur && before) { Object.keys(before).forEach(function (k) { cur[k] = before[k]; }); renderCal(); }
+    });
+    toast('予定を直しました');
+  }
+}
+function deleteEvent() {
+  var b = $('evDel');
+  if (!b.classList.contains('armed')) { b.classList.add('armed'); b.textContent = 'もう一度押すと削除'; return; }
+  var id = evEditing.id;
+  var gone = cal.events.filter(function (x) { return x.id === id; })[0];
+  closeEvent();
+  cal.events = cal.events.filter(function (x) { return x.id !== id; });
+  renderCal();
+  enqueue(function () { return api('deleteEvent', { id: id }); });
+  if (gone) toast('予定を削除しました', '元に戻す', function () {
+    cal.events.push(gone);
+    renderCal();
+    enqueue(function () { return api('addEvent', { title: gone.title, date: gone.date, time: gone.time, memo: gone.memo }); }).then(function (saved) {
+      var i = cal.events.indexOf(gone);
+      if (i >= 0) cal.events[i] = saved;
+      renderCal();
+    });
+  });
+}
+
 // ---- PCだけ：画面の下に固定した入力欄（Enterで続けて追加。入れる列は最後に選んだものを覚える） ----
 var quickCol = store('mt_quick_col') || 'now';
 function renderQuickCols() {
@@ -1942,6 +2178,12 @@ $('titleBtn').onclick = function () { setSpace(state.space === 'private' ? 'work
 $('trashBtn').onclick = openTrash;
 $('mLogout').onclick = function () { closeTrash(); logout(); };
 $('trashClose').onclick = closeTrash;
+$('evClose').onclick = closeEvent;
+$('eventPanel').onclick = function (e) { if (e.target === this) closeEvent(); };
+$('evSave').onclick = saveEvent;
+$('evDel').onclick = deleteEvent;
+$('evTimeClear').onclick = function () { $('evTime').value = ''; };
+$('evTitle').onkeydown = function (e) { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); saveEvent(); } };
 $('trashAll').onclick = function () {
   var b = $('trashAll');
   if (!b.classList.contains('armed')) {
@@ -1990,6 +2232,7 @@ document.addEventListener('keydown', function (e) {
   if ($('detail').classList.contains('open')) closeDetail(true);
   closeTrash();
   closeVisit();
+  closeEvent();
 });
 document.addEventListener('visibilitychange', function () {
   if (document.visibilityState !== 'visible' || !started || !store('mt_token')) return;
