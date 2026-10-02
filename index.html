@@ -51,6 +51,14 @@ input, textarea { font: inherit; color: var(--ink); }
 .title-btn { font-size: 18px; font-weight: 600; display: inline-flex; align-items: center; gap: 2px; padding: 4px 6px; margin-left: -6px; border-radius: 8px; }
 .title-btn:active { background: var(--line); }
 .title-btn svg { width: 16px; height: 16px; color: var(--muted); }
+html.space-private, body.space-private { --page: #f3f6f1; }
+body.space-private .title-btn { color: #2f6b45; }
+body.space-private .col[data-col="plan"] { display: none !important; }
+@media (prefers-color-scheme: dark) { html.space-private, body.space-private { --page: #1b221d; } body.space-private .title-btn { color: #9fd3ad; } }
+.space-tag { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #d9ecdf; color: #2f6b45; margin-left: 6px; }
+@media (prefers-color-scheme: dark) { .space-tag { background: #2b4433; color: #b9e2c4; } }
+.trash-account { border-top: 1px solid var(--line); margin-top: 28px; padding-top: 12px; font-size: 12px; color: var(--muted); display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; word-break: break-all; white-space: pre-line; }
+.trash-account button { font-size: 13px; color: var(--sub); padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line-strong); white-space: nowrap; }
 .status { font-size: 12px; color: var(--muted); }
 .icon-btn { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; color: var(--sub); }
 .icon-btn:active { background: var(--line); }
@@ -296,7 +304,7 @@ setTimeout(function () {
 <script src="config.js"></script>
 
 <header class="top" id="topBar" hidden>
-  <h1><button class="title-btn" id="titleBtn" aria-label="アカウント">Myタスク<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10l5 5 5-5"/></svg></button></h1>
+  <h1><button class="title-btn" id="titleBtn" aria-label="仕事とプライベートを切り替える"><span id="titleText">Myタスク</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9l5-5 5 5M7 15l5 5 5-5"/></svg></button></h1>
   <span class="status" id="status"></span>
   <button class="icon-btn trash-btn" id="trashBtn" aria-label="ゴミ箱" title="ゴミ箱"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9.5 7V4.8h5V7"/><path d="M6.5 7l.9 12.2a1.6 1.6 0 0 0 1.6 1.5h6a1.6 1.6 0 0 0 1.6-1.5L17.5 7"/><path d="M10.2 11v6M13.8 11v6"/></svg></button>
   <button class="icon-btn hist off" id="undoBtn" aria-label="元に戻す" title="元に戻す"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="arc-out" d="M8.3 7.9A6.8 6.8 0 1 1 10.1 18.7"/><path class="arc-in" d="M8.3 7.9A6.8 6.8 0 1 1 10.1 18.7"/><path class="head" d="M3.8 2.4L2.5 11.6L11.5 10.3Z"/></svg></button>
@@ -305,10 +313,6 @@ setTimeout(function () {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
   </button>
 </header>
-<div class="menu" id="menu">
-  <div class="foot" id="mFoot" style="border-top:0;margin-top:0"></div>
-  <button id="mLogout">ログアウト</button>
-</div>
 <nav class="tabs" id="tabs" hidden></nav>
 <main class="board" id="board"><div class="loading">読み込み中…</div></main>
 <form class="quick-add" id="quickAdd" hidden autocomplete="off">
@@ -391,6 +395,7 @@ setTimeout(function () {
     <div style="font-size:19px;font-weight:600">ゴミ箱</div>
     <div class="note" id="trashNote"></div>
     <div id="trashList"></div>
+    <div class="trash-account"><span id="mFoot"></span><button id="mLogout">ログアウト</button></div>
   </div>
 </div>
 
@@ -406,6 +411,9 @@ var COLS = [
 ];
 var PLAN = { id: 'plan', name: '予定', short: '予定' };
 var TABS = COLS.concat([PLAN]);
+/** 表示中のタブ（プライベートには予定タブが無い） */
+function currentTabs() { return state.space === 'private' ? COLS : TABS; }
+function inSpace(t) { return (t.space || 'work') === state.space; }
 var CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 var MEMO_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14v16H5z"/><path d="M9 9h6M9 13h6M9 17h3"/></svg>';
 var PIN_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M14.6 2.6l6.8 6.8-1.6 1.1-2.2-.4-3.4 3.4.6 4.3-1.6 1.6-3.6-3.6-5.3 5.3-1.4-1.4 5.3-5.3-3.6-3.6 1.6-1.6 4.3.6 3.4-3.4-.4-2.2z"/></svg>';
@@ -414,7 +422,7 @@ var COMMENT_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 var CHEV_L = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>';
 var CHEV_R = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
 
-var state = { tasks: [], me: null, keepDays: 183, active: 'now' };
+var state = { tasks: [], me: null, keepDays: 183, active: 'now', space: 'work' };
 var plan = { date: '', data: null, comments: null, loading: false, error: '', commentsLoading: false };
 var dragging = false;
 var idMap = {};          // 仮ID → 保存後の本当のID
@@ -615,7 +623,7 @@ function saveBoardCache() {
 
 // ---- 描画 ----
 function activeTasks(col) {
-  return state.tasks.filter(function (t) { return !t.done && !t.deleted && t.col === col; })
+  return state.tasks.filter(function (t) { return !t.done && !t.deleted && t.col === col && inSpace(t); })
     .sort(function (a, b) { return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || a.ord - b.ord; });   // ピン留めが上
 }
 function render() {
@@ -639,7 +647,7 @@ function render() {
 function renderTabs() {
   var tabs = $('tabs');
   tabs.innerHTML = '';
-  TABS.forEach(function (c) {
+  currentTabs().forEach(function (c) {
     var b = el('button', 'tab' + (c.id === state.active ? ' active' : ''));
     b.dataset.col = c.id;
     b.appendChild(document.createTextNode(c.short));
@@ -776,8 +784,7 @@ function renderMenuFoot() {
     lines.push(state.me.email);
   }
   $('mFoot').textContent = lines.join('\n');
-  var n = state.tasks.filter(function (t) { return t.done || t.deleted; }).length;
-  updateTrashBadge(n);
+  updateTrashBadge(trashTasks().length);
 }
 
 // ---- 日付 ----
@@ -807,6 +814,24 @@ function relDay(s) {
 }
 
 // ---- 操作 ----
+/** 仕事 ⇄ プライベート。見た目と列の中身が切り替わる（データは同じスプレッドシート） */
+function setSpace(space) {
+  state.space = space === 'private' ? 'private' : 'work';
+  store('mt_space', state.space);
+  applySpaceLook();
+  if (state.space === 'private' && state.active === 'plan') state.active = 'now';
+  render();
+  if ($('trashPanel').classList.contains('open')) renderTrash();
+  toast(state.space === 'private' ? 'プライベートに切り替えました' : '仕事のタスクに切り替えました');
+}
+function applySpaceLook() {
+  var priv = state.space === 'private';
+  document.body.classList.toggle('space-private', priv);
+  document.documentElement.classList.toggle('space-private', priv);   // 画面の下まで色を付ける
+  $('titleText').textContent = priv ? 'プライベート' : 'Myタスク';
+  var meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', priv ? '#f3f6f1' : '#ffffff');
+}
 function setActive(col) {
   state.active = col;
   store('mt_active', col);
@@ -845,14 +870,15 @@ function addTask(col, title, fromQuick, memo) {
   var tmp = {
     id: 'tmp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
     title: title, col: col, ord: activeTasks(col).length ? activeTasks(col).slice(-1)[0].ord + 1 : 0,
-    due: '', memo: memo, created: new Date().toISOString(), done: null
+    due: '', memo: memo, created: new Date().toISOString(), done: null, space: state.space
   };
   record('追加');
   state.tasks.push(tmp);
   render();
   if (!fromQuick) reopenAdd(col);   // 下の入力欄から足したときは、列の「＋新規」は開かない
   var tmpId = tmp.id;
-  enqueue(function () { return api('add', { col: col, title: title }); }).then(function (saved) {
+  var space = state.space;
+  enqueue(function () { return api('add', { col: col, title: title, space: space }); }).then(function (saved) {
     idMap[tmpId] = saved.id;
     var local = findTask(tmpId);
     if (local) local.id = saved.id;
@@ -895,7 +921,7 @@ function onDrop(col, listEl) {
   enqueue(function () { return api('reorder', { col: col, ids: ids.map(realId) }); });
 }
 function pinCount(col, exceptId) {
-  return state.tasks.filter(function (t) { return t.id !== exceptId && t.col === col && t.pinned && !t.done && !t.deleted; }).length;
+  return state.tasks.filter(function (t) { return t.id !== exceptId && t.col === col && t.pinned && !t.done && !t.deleted && inSpace(t); }).length;
 }
 function moveToCol(id, col) {
   var t = findTask(id);
@@ -1679,7 +1705,7 @@ function findPlanVisit(date, site, client, time) {
 // ---- ゴミ箱（完了・削除したカード。新しいものが上。30日で自動で消える） ----
 function trashedAt(t) { return t.deleted || t.done || ''; }
 function trashTasks() {
-  return state.tasks.filter(function (t) { return t.done || t.deleted; })
+  return state.tasks.filter(function (t) { return (t.done || t.deleted) && inSpace(t); })
     .sort(function (a, b) { return trashedAt(a) < trashedAt(b) ? 1 : -1; });
 }
 function updateTrashBadge(n) {
@@ -1874,9 +1900,10 @@ document.addEventListener('touchmove', function (e) {
     var dx = e.changedTouches[0].clientX - sx;
     var dy = e.changedTouches[0].clientY - sy;
     if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;   // 横に大きく動いたときだけ（縦のスクロールと区別）
-    var i = TABS.map(function (c) { return c.id; }).indexOf(state.active);
+    var tabs = currentTabs();
+    var i = tabs.map(function (c) { return c.id; }).indexOf(state.active);
     var next = i + (dx < 0 ? 1 : -1);
-    if (next >= 0 && next < TABS.length) setActive(TABS[next].id);
+    if (next >= 0 && next < tabs.length) setActive(tabs[next].id);
   }, { passive: true });
 })();
 
@@ -1911,10 +1938,9 @@ $('quickMemo').onkeydown = function (e) {
 
 // ---- つなぎ込み ----
 $('addTop').onclick = function () { openAdd(mobileMq.matches && state.active !== 'plan' ? state.active : 'now'); };
-$('titleBtn').onclick = function (e) { e.stopPropagation(); $('menu').classList.toggle('open'); };
-document.addEventListener('click', function (e) { if (!$('menu').contains(e.target)) $('menu').classList.remove('open'); });
+$('titleBtn').onclick = function () { setSpace(state.space === 'private' ? 'work' : 'private'); };
 $('trashBtn').onclick = openTrash;
-$('mLogout').onclick = function () { $('menu').classList.remove('open'); logout(); };
+$('mLogout').onclick = function () { closeTrash(); logout(); };
 $('trashClose').onclick = closeTrash;
 $('trashAll').onclick = function () {
   var b = $('trashAll');
@@ -1964,7 +1990,6 @@ document.addEventListener('keydown', function (e) {
   if ($('detail').classList.contains('open')) closeDetail(true);
   closeTrash();
   closeVisit();
-  $('menu').classList.remove('open');
 });
 document.addEventListener('visibilitychange', function () {
   if (document.visibilityState !== 'visible' || !started || !store('mt_token')) return;
@@ -1977,7 +2002,9 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
 }
 
 state.active = store('mt_active') || 'now';
-if (TABS.map(function (c) { return c.id; }).indexOf(state.active) < 0) state.active = 'now';
+state.space = store('mt_space') === 'private' ? 'private' : 'work';
+applySpaceLook();
+if (currentTabs().map(function (c) { return c.id; }).indexOf(state.active) < 0) state.active = 'now';
 state.me = storeJson('mt_me');
 if (store('mt_token')) startApp(); else showLogin();
 </script>
