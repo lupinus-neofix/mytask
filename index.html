@@ -93,6 +93,11 @@ input, textarea { font: inherit; color: var(--ink); }
 .chk svg { width: 14px; height: 14px; opacity: 0; }
 .chk.on { background: var(--c-add); border-color: var(--c-add); color: #fff; }
 .chk.on svg { opacity: 1; }
+.card.pinned { border: 1.5px solid var(--c-add); background: color-mix(in srgb, var(--c-pill) 35%, var(--card)); }
+.pin-mark { flex: none; width: 22px; height: 22px; margin-top: 1px; color: var(--c-add); display: grid; place-items: center; }
+.pin-mark svg { width: 18px; height: 18px; }
+.btn.pin { flex: 0 0 auto; }
+.btn.pin.on { background: var(--c-pill, #eee); border-color: var(--c-add, #999); color: var(--c-ink, inherit); }
 .body { flex: 1; min-width: 0; }
 .title { font-size: 15px; font-weight: 500; word-break: break-word; }
 .meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--sub); align-items: center; }
@@ -316,6 +321,7 @@ setTimeout(function () {
     <div class="counter" id="dCount"></div>
     <div class="actions">
       <button class="btn primary" id="dCloseBottom">閉じる</button>
+      <button class="btn pin" id="dPin">📌 ピン留め</button>
       <button class="btn danger" id="dDel">削除</button>
     </div>
   </div>
@@ -366,6 +372,8 @@ var PLAN = { id: 'plan', name: '予定', short: '予定' };
 var TABS = COLS.concat([PLAN]);
 var CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 var MEMO_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14v16H5z"/><path d="M9 9h6M9 13h6M9 17h3"/></svg>';
+var PIN_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M14.6 2.6l6.8 6.8-1.6 1.1-2.2-.4-3.4 3.4.6 4.3-1.6 1.6-3.6-3.6-5.3 5.3-1.4-1.4 5.3-5.3-3.6-3.6 1.6-1.6 4.3.6 3.4-3.4-.4-2.2z"/></svg>';
+var PIN_MAX = 3;   // 1つの列にピン留めできる数
 var COMMENT_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>';
 var CHEV_L = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>';
 var CHEV_R = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
@@ -569,7 +577,7 @@ function saveBoardCache() {
 // ---- 描画 ----
 function activeTasks(col) {
   return state.tasks.filter(function (t) { return !t.done && !t.deleted && t.col === col; })
-    .sort(function (a, b) { return a.ord - b.ord; });
+    .sort(function (a, b) { return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || a.ord - b.ord; });   // ピン留めが上
 }
 function render() {
   renderTabs();
@@ -690,13 +698,20 @@ function buildColumns() {
   renderPlan();
 }
 function cardEl(t) {
-  var card = el('div', 'card' + (String(t.id).indexOf('tmp_') === 0 ? ' pending' : ''));
+  var card = el('div', 'card' + (String(t.id).indexOf('tmp_') === 0 ? ' pending' : '') + (t.pinned ? ' pinned' : ''));
   card.dataset.id = t.id;
-  var chk = el('button', 'chk');
-  chk.setAttribute('aria-label', '完了にする');
-  chk.innerHTML = CHECK_SVG;
-  chk.onclick = function (e) { e.stopPropagation(); completeFromCard(t.id, card, chk); };
-  card.appendChild(chk);
+  if (t.pinned) {                       // ピン留め：チェックの代わりにピン。完了にはできない
+    var pm = el('span', 'pin-mark');
+    pm.innerHTML = PIN_SVG;
+    pm.title = 'ピン留め中';
+    card.appendChild(pm);
+  } else {
+    var chk = el('button', 'chk');
+    chk.setAttribute('aria-label', '完了にする');
+    chk.innerHTML = CHECK_SVG;
+    chk.onclick = function (e) { e.stopPropagation(); completeFromCard(t.id, card, chk); };
+    card.appendChild(chk);
+  }
   var body = el('div', 'body');
   body.appendChild(el('div', 'title', t.title));
   var meta = el('div', 'meta');
@@ -819,6 +834,14 @@ function findTask(id) {
 }
 function onDrop(col, listEl) {
   var ids = Array.prototype.map.call(listEl.querySelectorAll('.card'), function (c) { return c.dataset.id; });
+  var isPinned = function (id) { var t = findTask(id); return !!(t && t.pinned); };
+  ids = ids.filter(isPinned).concat(ids.filter(function (id) { return !isPinned(id); }));   // ピン留めはいつも上
+  var moving = ids.filter(function (id) { var t = findTask(id); return t && t.pinned && t.col !== col; });
+  if (moving.length && pinCount(col) + moving.length > PIN_MAX) {
+    toast('「' + colName(col) + '」はピン留めが' + PIN_MAX + 'つあります');
+    render();
+    return;
+  }
   var prev = activeTasks(col).map(function (t) { return t.id; });
   if (ids.join() === prev.join()) { render(); return; }
   record(ids.length > prev.length ? '移動' : '並べ替え');
@@ -829,9 +852,13 @@ function onDrop(col, listEl) {
   render();
   enqueue(function () { return api('reorder', { col: col, ids: ids.map(realId) }); });
 }
+function pinCount(col, exceptId) {
+  return state.tasks.filter(function (t) { return t.id !== exceptId && t.col === col && t.pinned && !t.done && !t.deleted; }).length;
+}
 function moveToCol(id, col) {
   var t = findTask(id);
   if (!t || t.col === col || col === 'plan') { render(); return; }
+  if (t.pinned && pinCount(col, t.id) >= PIN_MAX) { toast('「' + colName(col) + '」はピン留めが' + PIN_MAX + 'つあります'); render(); return; }
   record('移動');
   var others = activeTasks(col);
   t.ord = others.length ? others.slice(-1)[0].ord + 1 : 0;
@@ -852,6 +879,7 @@ function completeFromCard(id, card, chk) {
 function setDone(id, done) {
   var t = findTask(id);
   if (!t || !!t.done === !!done) return;
+  if (done && t.pinned) { toast('ピン留めしたカードは完了にできません'); render(); return; }
   record(done ? '完了' : '完了の取り消し');
   t.done = done ? new Date().toISOString() : null;
   if (!done) t.ord = activeTasks(t.col).length ? activeTasks(t.col).slice(-1)[0].ord + 1 : 0;
@@ -975,8 +1003,29 @@ function openDetail(id) {
   updateCounter();
   $('dDel').classList.remove('armed');
   $('dDel').textContent = '削除';
+  renderPinButton(t);
   $('detail').classList.add('open');
   autoGrow($('dTitle'));
+}
+function renderPinButton(t) {
+  var b = $('dPin');
+  b.classList.toggle('on', !!t.pinned);
+  b.textContent = t.pinned ? '📌 ピンを外す' : '📌 ピン留め';
+  var d = $('detailSheet');
+  d.dataset.col = editing ? editing.col : t.col;   // ボタンの色を列の色に
+}
+/** ピンの付け外し（すぐ保存。↶で戻せる） */
+function togglePin(id) {
+  var t = findTask(id);
+  if (!t) return;
+  var pin = !t.pinned;
+  if (pin && pinCount(t.col, t.id) >= PIN_MAX) { toast('ピン留めは1つの列に' + PIN_MAX + 'つまでです'); return; }
+  record(pin ? 'ピン留め' : 'ピンを外す');
+  t.pinned = pin;
+  render();
+  renderPinButton(t);
+  toast(pin ? 'ピン留めしました' : 'ピンを外しました');
+  enqueue(function () { return api('update', { id: realId(t.id), patch: { pinned: pin } }); });
 }
 function renderDetailCols() {
   var wrap = $('dCols');
@@ -1000,7 +1049,10 @@ function closeDetail(save) {
   if (title && title !== t.title) patch.title = title;
   if (($('dDue').value || '') !== (t.due || '')) patch.due = $('dDue').value || '';
   if ($('dMemo').value !== (t.memo || '')) patch.memo = $('dMemo').value;
-  if (ed.col !== t.col) patch.col = ed.col;
+  if (ed.col !== t.col) {
+    if (t.pinned && pinCount(ed.col, t.id) >= PIN_MAX) toast('「' + colName(ed.col) + '」はピン留めが' + PIN_MAX + 'つあるので、列は移しませんでした');
+    else patch.col = ed.col;
+  }
   if (!Object.keys(patch).length) return;
   record(Object.keys(patch).length === 1 && patch.col ? '移動' : '編集');
   if (patch.title) t.title = patch.title;
@@ -1795,8 +1847,11 @@ $('dTitle').onkeydown = function (e) { if (e.key === 'Enter') e.preventDefault()
 $('dMemo').oninput = updateCounter;
 $('dDueClear').onclick = function () { $('dDue').value = ''; };
 $('dCloseBottom').onclick = function () { closeDetail(true); };
+$('dPin').onclick = function () { if (editing) togglePin(editing.id); };
 $('dDel').onclick = function () {
   var b = $('dDel');
+  var cur = editing && findTask(editing.id);
+  if (cur && cur.pinned) { toast('ピンを外すと削除できます'); return; }
   if (!b.classList.contains('armed')) { b.classList.add('armed'); b.textContent = 'もう一度押すと削除'; return; }
   var id = editing.id;
   closeDetail(false);
