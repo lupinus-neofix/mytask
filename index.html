@@ -256,13 +256,14 @@ input, textarea { font: inherit; color: var(--ink); }
     padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.10); }
   .quick-add[hidden] { display: none; }
   .quick-top { display: flex; align-items: center; gap: 6px; }
-  .quick-add input { width: 100%; padding: 9px 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--page); font-size: 15px; }
+  .quick-add input, .quick-add textarea { width: 100%; padding: 9px 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--page); font-size: 15px; }
+  .quick-add textarea { font-size: 14px; resize: none; line-height: 1.5; }
   .quick-cols { display: flex; gap: 4px; flex: 1; }
   .quick-cols button { padding: 8px 12px; border-radius: 9px; font-size: 13px; font-weight: 600; color: var(--c-ink); background: transparent; border: 1.5px solid var(--line); }
   .quick-cols button.on { background: var(--c-pill); border-color: var(--c-ink); }
   .quick-add .go { padding: 8px 16px; border-radius: 9px; background: var(--ink); color: var(--page); font-weight: 600; font-size: 13px; }
   .tabs { display: none; }
-  .board { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding: 4px 20px 150px; }
+  .board { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding: 4px 20px 200px; }
   .top { padding: calc(18px + var(--safe-top)) 20px 12px; }
   .col { display: block; flex: 1 1 0; min-width: 160px; max-width: 340px; }
   .col-head { display: flex; }
@@ -316,6 +317,7 @@ setTimeout(function () {
     <button type="submit" class="go">追加</button>
   </div>
   <input type="text" id="quickInput" maxlength="200" placeholder="タスクを入力して Enter">
+  <textarea id="quickMemo" rows="2" maxlength="2000" placeholder="メモ（任意）　改行は Enter、追加は ⌘＋Enter"></textarea>
 </form>
 
 <section class="login" id="login" hidden>
@@ -838,11 +840,12 @@ function closeAdd(col) {
   c.querySelector('.add').style.display = '';
   c.querySelector('.add-form').classList.remove('open');
 }
-function addTask(col, title, fromQuick) {
+function addTask(col, title, fromQuick, memo) {
+  memo = String(memo || '').slice(0, 2000);
   var tmp = {
     id: 'tmp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
     title: title, col: col, ord: activeTasks(col).length ? activeTasks(col).slice(-1)[0].ord + 1 : 0,
-    due: '', memo: '', created: new Date().toISOString(), done: null
+    due: '', memo: memo, created: new Date().toISOString(), done: null
   };
   record('追加');
   state.tasks.push(tmp);
@@ -856,6 +859,8 @@ function addTask(col, title, fromQuick) {
     var card = document.querySelector('.card[data-id="' + tmpId + '"]');
     if (card) { card.dataset.id = saved.id; card.classList.remove('pending'); }
     saveBoardCache();
+    // メモ付きで足したときは、本当のIDが決まってからメモを保存する（受付の「追加」はタイトルだけ受け取るため）
+    if (memo) enqueue(function () { return api('update', { id: saved.id, patch: { memo: memo } }); });
   });
 }
 function reopenAdd(col) {
@@ -1889,12 +1894,19 @@ function renderQuickCols() {
     box.appendChild(b);
   });
 }
-$('quickAdd').onsubmit = function (e) {
-  e.preventDefault();
-  var inp = $('quickInput');
+function submitQuick() {
+  var inp = $('quickInput'), memo = $('quickMemo');
   var title = inp.value.replace(/\s+/g, ' ').trim();
-  if (title) { inp.value = ''; addTask(quickCol, title, true); }
+  if (!title) { inp.focus(); return; }
+  var text = memo.value.replace(/\s+$/, '');
+  inp.value = '';
+  memo.value = '';
+  addTask(quickCol, title, true, text);
   inp.focus();
+}
+$('quickAdd').onsubmit = function (e) { e.preventDefault(); submitQuick(); };
+$('quickMemo').onkeydown = function (e) {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.isComposing) { e.preventDefault(); submitQuick(); }
 };
 
 // ---- つなぎ込み ----
