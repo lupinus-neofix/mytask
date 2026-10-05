@@ -83,6 +83,14 @@ body:not(.space-private) .col[data-col="cal"] { display: none !important; }
 @media (prefers-color-scheme: dark) { html.space-private, body.space-private { --page: #1b221d; } body.space-private .title-btn { color: #9fd3ad; } }
 .space-tag { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #d9ecdf; color: #2f6b45; margin-left: 6px; }
 @media (prefers-color-scheme: dark) { .space-tag { background: #2b4433; color: #b9e2c4; } }
+.monthly-sec { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 12px; }
+.monthly-sec h4 { font-size: 14px; margin: 0 0 4px; }
+.monthly-row { display: flex; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.monthly-row input { flex: 1; min-width: 0; border: 1px solid transparent; background: transparent; font-size: 14px; padding: 6px 8px; border-radius: 8px; }
+.monthly-row input:focus { border-color: var(--line-strong); background: var(--card); outline: none; }
+.day-select { font-size: 14px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--card); color: var(--ink); }
+.monthly-box { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.monthly-tag { display: inline-flex; align-items: center; gap: 2px; }
 .trash-account { border-top: 1px solid var(--line); margin-top: 28px; padding-top: 12px; font-size: 12px; color: var(--muted); display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; word-break: break-all; white-space: pre-line; }
 .trash-account button { font-size: 13px; color: var(--sub); padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line-strong); white-space: nowrap; }
 .status { font-size: 12px; color: var(--muted); }
@@ -385,6 +393,8 @@ setTimeout(function () {
       <textarea class="field f-memo" id="dMemo" maxlength="2000"></textarea>
       <div class="counter" id="dCount"></div>
     </div>
+    <div class="label">毎月</div>
+    <div class="monthly-box" id="dMonthly"></div>
     <div class="actions">
       <button class="btn primary" id="dCloseBottom">閉じる</button>
       <button class="btn pin" id="dPin">📌 ピン留め</button>
@@ -447,6 +457,7 @@ setTimeout(function () {
     <div style="font-size:19px;font-weight:600">ゴミ箱</div>
     <div class="note" id="trashNote"></div>
     <div id="trashList"></div>
+    <div class="monthly-sec" id="monthlySec"></div>
     <div class="trash-account"><span id="mFoot"></span><button id="mLogout">ログアウト</button></div>
   </div>
 </div>
@@ -662,6 +673,7 @@ function load() {
     state.tasks = res.tasks || [];
     state.me = res.me || state.me;
     state.keepDays = res.keepDays || 183;
+    state.monthly = res.monthly || [];
     storeJson('mt_me', state.me);
     saveBoardCache();
     render();
@@ -673,6 +685,7 @@ function load() {
   });
 }
 function saveBoardCache() {
+  storeJson('mt_monthly', state.monthly || []);
   storeJson('mt_board', { tasks: state.tasks.filter(function (t) { return String(t.id).indexOf('tmp_') !== 0; }), keepDays: state.keepDays });
 }
 
@@ -832,6 +845,7 @@ function cardEl(t) {
     var d = dueInfo(t.due);
     meta.appendChild(el('span', 'due ' + d.cls, d.text));
   }
+  if (t.tpl) meta.appendChild(el('span', 'monthly-tag', '🔁 毎月'));
   if (t.memo) {
     var m = el('span', 'memo-mark');
     m.innerHTML = MEMO_SVG;
@@ -1141,6 +1155,7 @@ function openDetail(id) {
   $('dDel').classList.remove('armed');
   $('dDel').textContent = '削除';
   renderPinButton(t);
+  renderDetailMonthly(t);
   $('detail').classList.add('open');
   autoGrow($('dTitle'));
 }
@@ -1788,6 +1803,7 @@ function dayLabel(iso) {
 function openTrash() { renderTrash(); $('trashPanel').classList.add('open'); }
 function closeTrash() { $('trashPanel').classList.remove('open', 'peek'); }
 function renderTrash() {
+  renderMonthlyList();
   var list = $('trashList');
   list.innerHTML = '';
   var items = trashTasks();
@@ -2144,19 +2160,144 @@ function deleteEvent() {
   });
 }
 
+// ---- 毎月のタスク（ひな形）：期限の10日前（期限が1〜10日なら1日）に「次に」へ自動で出る ----
+function daySelect(value) {
+  var sel = el('select', 'day-select');
+  for (var d = 1; d <= 31; d++) { var o = el('option', null, '毎月' + d + '日'); o.value = String(d); if (d === value) o.selected = true; sel.appendChild(o); }
+  return sel;
+}
+function monthlyInSpace() { return (state.monthly || []).filter(function (m) { return (m.space || 'work') === state.space; }); }
+/** 次に「次に」へ出る日（画面の案内用。サーバーと同じ決まり） */
+function nextAppearText(day) {
+  var now = new Date(), today = ymd(now);
+  for (var k = 0; k < 2; k++) {
+    var y = now.getFullYear(), m = now.getMonth() + k;
+    var last = new Date(y, m + 1, 0).getDate();
+    var d = Math.min(day, last);
+    var due = ymd(new Date(y, m, d)), appear = ymd(new Date(y, m, Math.max(1, d - 10)));
+    if (today <= due) return today >= appear ? '今月分を「次に」に出しました' : '次は ' + fmtMd(appear) + ' に「次に」へ出ます';
+  }
+  return '';
+}
+function applyMonthlyResult(res) {
+  if (res.monthly) state.monthly = res.monthly;
+  (res.made || []).forEach(function (t) { if (!findTask(t.id)) state.tasks.push(t); });
+  render();
+  if ($('trashPanel').classList.contains('open')) renderTrash();
+}
+function addMonthly(title, memo, day) {
+  enqueue(function () { return api('addMonthly', { title: title, memo: memo, day: day, space: state.space }); }).then(function (res) {
+    applyMonthlyResult(res);
+    toast('毎月' + day + '日のタスクにしました。' + nextAppearText(day));
+  });
+}
+function renderDetailMonthly(t) {
+  var box = $('dMonthly');
+  box.innerHTML = '';
+  var tplId = t.tpl ? t.tpl.split(':')[0] : '';
+  var tpl = (state.monthly || []).filter(function (m) { return m.id === tplId; })[0];
+  if (tpl) {
+    var sel = daySelect(tpl.day);
+    sel.onchange = function () {
+      var day = Number(sel.value);
+      enqueue(function () { return api('updateMonthly', { id: tpl.id, patch: { day: day } }); }).then(function (res) {
+        applyMonthlyResult(res);
+        toast('来月から毎月' + day + '日にします');
+      });
+    };
+    box.appendChild(sel);
+    var stop = el('button', 'small-btn del', '毎月をやめる');
+    stop.onclick = function () {
+      if (!stop.classList.contains('armed')) { stop.classList.add('armed'); stop.textContent = 'もう一度押すとやめる'; return; }
+      stopMonthly(tpl.id);
+      box.innerHTML = '';
+      box.appendChild(el('span', 'note', '毎月をやめました（このカードは残ります）'));
+    };
+    box.appendChild(stop);
+    return;
+  }
+  if (t.tpl) { box.appendChild(el('span', 'note', '毎月はやめています')); return; }
+  var make = el('button', 'small-btn', '🔁 毎月にする');
+  make.onclick = function () {
+    box.innerHTML = '';
+    var d0 = t.due ? Number(t.due.slice(8)) : new Date().getDate();
+    var sel2 = daySelect(d0);
+    var go = el('button', 'small-btn', '決定');
+    go.onclick = function () {
+      var day = Number(sel2.value);
+      var id = editing ? editing.id : t.id;
+      enqueue(function () { return api('makeMonthly', { taskId: realId(id), day: day }); }).then(function (res) {
+        var cur = findTask(res.task.id);
+        if (cur) { cur.tpl = res.task.tpl; cur.due = res.task.due; }
+        applyMonthlyResult(res);
+        if (editing && cur && editing.id === cur.id) { $('dDue').value = cur.due || ''; renderDetailMonthly(cur); }
+        toast('毎月' + day + '日のタスクにしました');
+      });
+    };
+    box.appendChild(sel2);
+    box.appendChild(go);
+  };
+  box.appendChild(make);
+}
+function stopMonthly(id) {
+  state.monthly = (state.monthly || []).filter(function (m) { return m.id !== id; });
+  if ($('trashPanel').classList.contains('open')) renderTrash();
+  enqueue(function () { return api('deleteMonthly', { id: id }); }).then(applyMonthlyResult);
+  toast('毎月をやめました');
+}
+function renderMonthlyList() {
+  var sec = $('monthlySec');
+  sec.innerHTML = '';
+  var list = monthlyInSpace().slice().sort(function (a, b) { return a.day - b.day; });
+  sec.appendChild(el('h4', null, '🔁 毎月のタスク'));
+  sec.appendChild(el('div', 'note', '期限の10日前（期限が1〜10日のものは1日）に「次に」へ出ます。完了・削除しても翌月また出ます。'));
+  if (!list.length) { sec.appendChild(el('div', 'note', 'まだありません（PCの下の入力欄で「毎月」を選ぶか、カードを開いて「🔁 毎月にする」）')); return; }
+  list.forEach(function (m) {
+    var row = el('div', 'monthly-row');
+    var sel = daySelect(m.day);
+    sel.onchange = function () {
+      var day = Number(sel.value);
+      enqueue(function () { return api('updateMonthly', { id: m.id, patch: { day: day } }); }).then(function (res) { applyMonthlyResult(res); toast('来月から毎月' + day + '日にします'); });
+    };
+    var name = el('input');
+    name.value = m.title;
+    name.maxLength = 200;
+    name.onchange = function () {
+      var title = name.value.replace(/\s+/g, ' ').trim();
+      if (!title) { name.value = m.title; return; }
+      enqueue(function () { return api('updateMonthly', { id: m.id, patch: { title: title } }); }).then(function (res) { applyMonthlyResult(res); toast('名前を直しました（来月の分から）'); });
+    };
+    var stop = el('button', 'small-btn del', 'やめる');
+    stop.onclick = function () {
+      if (!stop.classList.contains('armed')) { stop.classList.add('armed'); stop.textContent = 'もう一度'; return; }
+      stopMonthly(m.id);
+    };
+    row.appendChild(sel);
+    row.appendChild(name);
+    row.appendChild(stop);
+    sec.appendChild(row);
+  });
+}
+
 // ---- PCだけ：画面の下に固定した入力欄（Enterで続けて追加。入れる列は最後に選んだものを覚える） ----
 var quickCol = store('mt_quick_col') || 'now';
+var quickDay = Number(store('mt_quick_day')) || 1;
 function renderQuickCols() {
-  if (COLS.map(function (c) { return c.id; }).indexOf(quickCol) < 0) quickCol = 'now';
+  if (COLS.map(function (c) { return c.id; }).concat(['monthly']).indexOf(quickCol) < 0) quickCol = 'now';
   var box = $('quickCols');
   box.innerHTML = '';
-  COLS.forEach(function (c) {
+  COLS.concat([{ id: 'monthly', short: '毎月' }]).forEach(function (c) {
     var b = el('button', c.id === quickCol ? 'on' : '', c.short);
     b.type = 'button';
-    b.dataset.col = c.id;
+    b.dataset.col = c.id === 'monthly' ? 'next' : c.id;
     b.onclick = function () { quickCol = c.id; store('mt_quick_col', c.id); renderQuickCols(); $('quickInput').focus(); };
     box.appendChild(b);
   });
+  if (quickCol === 'monthly') {
+    var sel = daySelect(quickDay);
+    sel.onchange = function () { quickDay = Number(sel.value); store('mt_quick_day', String(quickDay)); };
+    box.appendChild(sel);
+  }
 }
 function submitQuick() {
   var inp = $('quickInput'), memo = $('quickMemo');
@@ -2165,7 +2306,8 @@ function submitQuick() {
   var text = memo.value.replace(/\s+$/, '');
   inp.value = '';
   memo.value = '';
-  addTask(quickCol, title, true, text);
+  if (quickCol === 'monthly') addMonthly(title, text, quickDay);
+  else addTask(quickCol, title, true, text);
   inp.focus();
 }
 $('quickAdd').onsubmit = function (e) { e.preventDefault(); submitQuick(); };
@@ -2250,6 +2392,7 @@ state.space = store('mt_space') === 'private' ? 'private' : 'work';
 applySpaceLook();
 if (currentTabs().map(function (c) { return c.id; }).indexOf(state.active) < 0) state.active = 'now';
 state.me = storeJson('mt_me');
+state.monthly = storeJson('mt_monthly') || [];
 if (store('mt_token')) startApp(); else showLogin();
 </script>
 </body>
