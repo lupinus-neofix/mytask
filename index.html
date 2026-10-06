@@ -144,8 +144,8 @@ body:not(.space-private) .col[data-col="cal"] { display: none !important; }
 .title { font-size: 15px; font-weight: 500; word-break: break-word; }
 .meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--sub); align-items: center; }
 .due { padding: 1px 7px; border-radius: 6px; background: var(--line); }
-.due.over { background: var(--danger-bg); color: var(--danger); font-weight: 600; }
-.due.today { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
+.due.over { background: var(--danger); color: #fff; font-weight: 700; }
+.due.today { background: var(--danger-bg); color: var(--danger); font-weight: 600; }
 .memo-mark { display: inline-flex; align-items: center; gap: 2px; }
 .memo-mark svg { width: 14px; height: 14px; }
 .sortable-ghost { opacity: .35; }
@@ -692,7 +692,18 @@ function saveBoardCache() {
 // ---- 描画 ----
 function activeTasks(col) {
   return state.tasks.filter(function (t) { return !t.done && !t.deleted && t.col === col && inSpace(t); })
-    .sort(function (a, b) { return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || a.ord - b.ord; });   // ピン留めが上
+    .sort(function (a, b) { return urgency(a) - urgency(b) || a.ord - b.ord; });
+}
+/** 並びの優先：ピン留め → 期限切れ → 期限が今日 → 残り。同じ組の中は自分で並べた順 */
+function urgency(t) {
+  if (t.pinned) return 0;
+  if (!t.due) return 3;
+  var today = ymd(new Date());
+  return t.due < today ? 1 : t.due === today ? 2 : 3;
+}
+/** 列の一番下に入れるときの並び順の番号（表示順の最後とは限らないので一番大きい番号＋1） */
+function nextOrdIn(col) {
+  return activeTasks(col).reduce(function (m, t) { return Math.max(m, t.ord + 1); }, 0);
 }
 function render() {
   renderTabs();
@@ -880,7 +891,7 @@ function dueInfo(s) {
   var today = new Date();
   var t = ymd(today);
   var tm = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
-  if (s < t) return { cls: 'over', text: '期限切れ ' + fmtMd(s) };
+  if (s < t) return { cls: 'over', text: Math.round((parseYmd(t) - parseYmd(s)) / 864e5) + '日過ぎ' };
   if (s === t) return { cls: 'today', text: '今日まで' };
   if (s === ymd(tm)) return { cls: '', text: '明日まで' };
   return { cls: '', text: fmtMd(s) + 'まで' };
@@ -952,7 +963,7 @@ function addTask(col, title, fromQuick, memo) {
   memo = String(memo || '').slice(0, 2000);
   var tmp = {
     id: 'tmp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
-    title: title, col: col, ord: activeTasks(col).length ? activeTasks(col).slice(-1)[0].ord + 1 : 0,
+    title: title, col: col, ord: nextOrdIn(col),
     due: '', memo: memo, created: new Date().toISOString(), done: null, space: state.space
   };
   record('追加');
@@ -985,8 +996,10 @@ function findTask(id) {
 }
 function onDrop(col, listEl) {
   var ids = Array.prototype.map.call(listEl.querySelectorAll('.card'), function (c) { return c.dataset.id; });
-  var isPinned = function (id) { var t = findTask(id); return !!(t && t.pinned); };
-  ids = ids.filter(isPinned).concat(ids.filter(function (id) { return !isPinned(id); }));   // ピン留めはいつも上
+  var rank = function (id) { var t = findTask(id); return t ? urgency(t) : 3; };
+  ids = [0, 1, 2, 3].reduce(function (out, r) {   // ピン留め → 期限切れ → 今日 → 残り はいつもこの順（組の中は並べた順）
+    return out.concat(ids.filter(function (id) { return rank(id) === r; }));
+  }, []);
   var moving = ids.filter(function (id) { var t = findTask(id); return t && t.pinned && t.col !== col; });
   if (moving.length && pinCount(col) + moving.length > PIN_MAX) {
     toast('「' + colName(col) + '」はピン留めが' + PIN_MAX + 'つあります');
@@ -1011,8 +1024,7 @@ function moveToCol(id, col) {
   if (!t || t.col === col || col === 'plan') { render(); return; }
   if (t.pinned && pinCount(col, t.id) >= PIN_MAX) { toast('「' + colName(col) + '」はピン留めが' + PIN_MAX + 'つあります'); render(); return; }
   record('移動');
-  var others = activeTasks(col);
-  t.ord = others.length ? others.slice(-1)[0].ord + 1 : 0;
+  t.ord = nextOrdIn(col);
   t.col = col;
   render();
   toast('「' + colName(col) + '」へ移しました');
@@ -1033,7 +1045,7 @@ function setDone(id, done) {
   if (done && t.pinned) { toast('ピン留めしたカードは完了にできません'); render(); return; }
   record(done ? '完了' : '完了の取り消し');
   t.done = done ? new Date().toISOString() : null;
-  if (!done) t.ord = activeTasks(t.col).length ? activeTasks(t.col).slice(-1)[0].ord + 1 : 0;
+  if (!done) t.ord = nextOrdIn(t.col);
   render();
   enqueue(function () { return api('setDone', { id: realId(t.id), done: done }); });
 }
@@ -1056,8 +1068,7 @@ function restoreTask(id, col) {
   record('戻す');
   t.done = null;
   t.deleted = null;
-  var others = activeTasks(to);
-  t.ord = others.length ? others.slice(-1)[0].ord + 1 : 0;
+  t.ord = nextOrdIn(to);
   t.col = to;
   render();
   if ($('trashPanel').classList.contains('open')) renderTrash();
@@ -1212,8 +1223,7 @@ function closeDetail(save) {
   if ('due' in patch) t.due = patch.due;
   if ('memo' in patch) t.memo = patch.memo;
   if (patch.col) {
-    var others = activeTasks(patch.col);
-    t.ord = others.length ? others.slice(-1)[0].ord + 1 : 0;
+    t.ord = nextOrdIn(patch.col);
     t.col = patch.col;
   }
   render();
@@ -2382,6 +2392,11 @@ document.addEventListener('keydown', function (e) {
   closeVisit();
   closeEvent();
 });
+var renderedDay = ymd(new Date());
+setInterval(function () {
+  var d = ymd(new Date());
+  if (d !== renderedDay && !dragging && !editing) { renderedDay = d; render(); }
+}, 60000);
 document.addEventListener('visibilitychange', function () {
   if (document.visibilityState !== 'visible' || !started || !store('mt_token')) return;
   if (pendingCount === 0 && !editing) load();
