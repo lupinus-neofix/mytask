@@ -1235,8 +1235,13 @@ function setMemoFull(on) {
 function editMemoFull() {
   var ta = $('dMemo');
   if (!ta.readOnly || !$('detail').classList.contains('memo-full')) return;
+  // iPhoneは「読むだけ」のままタップで入った状態だとキーボードが出ないので、いったん外して入り直す（タップの中で行う）
+  var pos = ta.selectionStart, scroll = ta.scrollTop;
   ta.readOnly = false;
+  ta.blur();
   ta.focus();
+  try { ta.setSelectionRange(pos, pos); } catch (e) { /* 無視 */ }
+  ta.scrollTop = scroll;
 }
 function autoGrow(ta) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; }
 
