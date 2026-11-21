@@ -91,6 +91,7 @@ body:not(.space-private) .col[data-col="cal"] { display: none !important; }
 .day-select { font-size: 14px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--card); color: var(--ink); }
 .monthly-box { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .monthly-tag { display: inline-flex; align-items: center; gap: 2px; }
+.gcal-btns { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 .trash-account { border-top: 1px solid var(--line); margin-top: 28px; padding-top: 12px; font-size: 12px; color: var(--muted); display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; word-break: break-all; white-space: pre-line; }
 .trash-account button { font-size: 13px; color: var(--sub); padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line-strong); white-space: nowrap; }
 .status { font-size: 12px; color: var(--muted); }
@@ -458,6 +459,7 @@ setTimeout(function () {
     <div class="note" id="trashNote"></div>
     <div id="trashList"></div>
     <div class="monthly-sec" id="monthlySec"></div>
+    <div class="monthly-sec" id="gcalSec"></div>
     <div class="trash-account"><span id="mFoot"></span><button id="mLogout">ログアウト</button></div>
   </div>
 </div>
@@ -1819,6 +1821,7 @@ function openTrash() { renderTrash(); $('trashPanel').classList.add('open'); }
 function closeTrash() { $('trashPanel').classList.remove('open', 'peek'); }
 function renderTrash() {
   renderMonthlyList();
+  renderGcal();
   var list = $('trashList');
   list.innerHTML = '';
   var items = trashTasks();
@@ -2291,6 +2294,60 @@ function renderMonthlyList() {
     row.appendChild(name);
     row.appendChild(stop);
     sec.appendChild(row);
+  });
+}
+
+// ---- Googleカレンダーに期限を出す（押した人だけ。カレンダーは管理者のアカウントで作り、本人にだけ共有される） ----
+var gcalBusy = false;
+function renderGcal() {
+  var sec = $('gcalSec');
+  sec.innerHTML = '';
+  var g = state.me && state.me.gcal;
+  sec.appendChild(el('h4', null, '📅 Googleカレンダーに出す'));
+  if (!g) {
+    sec.appendChild(el('div', 'note', '期限のあるタスク（仕事・プライベート）が、あなたのGoogleカレンダーに終日の予定として出ます。' +
+      'プライベートは頭に「（私）」が付きます。完了・削除したものは消えます。Myタスクで変えると、5分ほどで反映されます。'));
+    sec.appendChild(el('div', 'note', 'カレンダーは管理者のアカウントで作り、あなたにだけ「見るだけ」で共有します（管理者からも見えます）。' +
+      'タスク名に利用者さんの名前は書かないでください。'));
+    var on = el('button', 'small-btn', gcalBusy ? '準備しています…' : 'Googleカレンダーに出す');
+    on.disabled = gcalBusy;
+    on.onclick = function () { gcalSet(true); };
+    var box = el('div', 'gcal-btns');
+    box.appendChild(on);
+    sec.appendChild(box);
+    return;
+  }
+  sec.appendChild(el('div', 'note', '出しています。まだGoogleカレンダーに出ていなければ「Googleカレンダーに追加する」を押してください。' +
+    '開けないときは、届いたメール（「…があなたとカレンダーを共有しました」）から追加できます。'));
+  var btns = el('div', 'gcal-btns');
+  var add = el('a', 'small-btn', 'Googleカレンダーに追加する');
+  add.href = g.url;
+  add.target = '_blank';
+  add.rel = 'noopener';
+  add.style.textDecoration = 'none';
+  add.style.color = 'inherit';
+  var off = el('button', 'small-btn del', gcalBusy ? 'やめています…' : 'やめる');
+  off.disabled = gcalBusy;
+  off.onclick = function () {
+    if (!off.classList.contains('armed')) { off.classList.add('armed'); off.textContent = 'もう一度押すとやめる'; return; }
+    gcalSet(false);
+  };
+  btns.appendChild(add);
+  btns.appendChild(off);
+  sec.appendChild(btns);
+}
+function gcalSet(on) {
+  if (gcalBusy) return;
+  gcalBusy = true;
+  renderGcal();
+  api(on ? 'gcalOn' : 'gcalOff').then(function (res) {
+    if (state.me) { state.me.gcal = res || null; storeJson('mt_me', state.me); }
+    toast(on ? 'カレンダーを作りました。「Googleカレンダーに追加する」を押してください' : 'Googleカレンダーに出すのをやめました（カレンダーは消しました）');
+  }).catch(function (err) {
+    toast(err.message);
+  }).then(function () {
+    gcalBusy = false;
+    renderGcal();
   });
 }
 
