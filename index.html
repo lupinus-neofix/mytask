@@ -55,9 +55,9 @@ input, textarea { font: inherit; color: var(--ink); }
 .title-btn svg { width: 16px; height: 16px; color: var(--muted); }
 html.space-private, body.space-private { --page: #f3f6f1; }
 body.space-private .title-btn { color: #2f6b45; }
-body.space-private .col[data-col="plan"] { display: none !important; }
-body:not(.space-private) .col[data-col="cal"] { display: none !important; }
-/* カレンダー（プライベート） */
+body.show-cal .col[data-col="plan"] { display: none !important; }
+body:not(.show-cal) .col[data-col="cal"] { display: none !important; }
+/* カレンダー（プライベート、カレンダー版の人は仕事でも） */
 .cal-nav { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
 .cal-nav .icon-btn { color: var(--c-ink); }
 .cal-title { flex: 1; text-align: center; font-weight: 600; font-size: 15px; }
@@ -478,8 +478,14 @@ var PLAN = { id: 'plan', name: '予定', short: '予定' };
 var TABS = COLS.concat([PLAN]);
 var CAL = { id: 'cal', name: 'カレンダー', short: 'カレンダー' };
 var PRIVATE_TABS = COLS.concat([CAL]);
-/** 表示中のタブ（プライベートには予定タブが無い） */
-function currentTabs() { return state.space === 'private' ? PRIVATE_TABS : TABS; }
+/** 4列目をカレンダーにするか：プライベート、またはカレンダー版の人（設定 calendar_users。事務員など、週間シフトの予定が要らない人） */
+function calMode() { return state.space === 'private' || !!(state.me && state.me.calendarView); }
+/** 表示中のタブ（カレンダーのときは予定タブが無い） */
+function currentTabs() { return calMode() ? PRIVATE_TABS : TABS; }
+/** 今の画面に無いタブを開いていたら「今すぐ」に戻す */
+function fixActiveTab() {
+  if (currentTabs().map(function (c) { return c.id; }).indexOf(state.active) < 0) state.active = 'now';
+}
 function inSpace(t) { return (t.space || 'work') === state.space; }
 var CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 var MEMO_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14v16H5z"/><path d="M9 9h6M9 13h6M9 17h3"/></svg>';
@@ -654,6 +660,8 @@ function startApp() {
   renderQuickCols();
   $('tabs').hidden = false;
   $('board').hidden = false;
+  applySpaceLook();   // ログインした人がカレンダー版なら、ここで4列目が切り替わる
+  fixActiveTab();
   updateHistoryButtons();
   var cached = storeJson('mt_board');
   if (!$('board').querySelector('.col')) $('board').innerHTML = '<div class="loading">読み込み中…</div>';
@@ -664,16 +672,23 @@ function startApp() {
   }
   started = true;
   load();
-  if (state.space === 'private') loadCal(cal.month);
+  if (calMode()) loadCal(cal.month);
   if (!plan.date) plan.date = ymd(new Date());
-  if (state.active === 'plan' || !mobileMq.matches) loadPlan(plan.date);
+  if (!calMode() && (state.active === 'plan' || !mobileMq.matches)) loadPlan(plan.date);
 }
 
 // ---- 読み込み ----
 function load() {
   return api('board').then(function (res) {
     state.tasks = res.tasks || [];
+    var wasCal = calMode();
     state.me = res.me || state.me;
+    if (calMode() !== wasCal) {   // 設定でカレンダー版になった／戻った
+      applySpaceLook();
+      fixActiveTab();
+      if (calMode()) loadCal(cal.month);
+      else if (state.active === 'plan' || !mobileMq.matches) loadPlan(plan.date || ymd(new Date()));
+    }
     state.keepDays = res.keepDays || 183;
     state.monthly = res.monthly || [];
     storeJson('mt_me', state.me);
@@ -723,7 +738,7 @@ function render() {
   });
   board.querySelector('.col[data-col="plan"]').classList.toggle('active', state.active === 'plan');
   board.querySelector('.col[data-col="cal"]').classList.toggle('active', state.active === 'cal');
-  if (state.space === 'private') renderCal();
+  if (calMode()) renderCal();
   renderMenuFoot();
   if (pendingCount === 0) saveBoardCache();
 }
@@ -912,9 +927,9 @@ function setSpace(space) {
   state.space = space === 'private' ? 'private' : 'work';
   store('mt_space', state.space);
   applySpaceLook();
-  if (state.space === 'private' && state.active === 'plan') state.active = 'now';
-  if (state.space === 'work' && state.active === 'cal') state.active = 'now';
-  if (state.space === 'private') loadCal(cal.month);
+  fixActiveTab();
+  if (calMode()) loadCal(cal.month);
+  else if (!mobileMq.matches && plan.date && (!plan.data || plan.data.date !== plan.date)) loadPlan(plan.date);
   render();
   if ($('trashPanel').classList.contains('open')) renderTrash();
   toast(state.space === 'private' ? 'プライベートに切り替えました' : '仕事のタスクに切り替えました');
@@ -923,6 +938,7 @@ function applySpaceLook() {
   var priv = state.space === 'private';
   document.body.classList.toggle('space-private', priv);
   document.documentElement.classList.toggle('space-private', priv);   // 画面の下まで色を付ける
+  document.body.classList.toggle('show-cal', calMode());
   $('titleText').textContent = priv ? 'プライベート' : 'Myタスク';
   var meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', priv ? '#f3f6f1' : '#ffffff');
@@ -1023,7 +1039,7 @@ function pinCount(col, exceptId) {
 }
 function moveToCol(id, col) {
   var t = findTask(id);
-  if (!t || t.col === col || col === 'plan') { render(); return; }
+  if (!t || t.col === col || col === 'plan' || col === 'cal') { render(); return; }
   if (t.pinned && pinCount(col, t.id) >= PIN_MAX) { toast('「' + colName(col) + '」はピン留めが' + PIN_MAX + 'つあります'); render(); return; }
   record('移動');
   t.ord = nextOrdIn(col);
@@ -1892,10 +1908,10 @@ function trashDropTarget(x, y) {
   if (!hit || !hit.closest) return null;
   if (mobileMq.matches) {
     var tab = hit.closest('.tab');
-    return tab && tab.dataset.col !== 'plan' ? tab : null;
+    return tab && tab.dataset.col !== 'plan' && tab.dataset.col !== 'cal' ? tab : null;
   }
   var col = hit.closest('.col');
-  return col && col.dataset.col !== 'plan' ? col : null;
+  return col && col.dataset.col !== 'plan' && col.dataset.col !== 'cal' ? col : null;
 }
 function moveTrashGhost() {
   tdrag.ghost.style.transform = 'translate(' + (tdrag.x - tdrag.x0) + 'px,' + (tdrag.y - tdrag.y0) + 'px) scale(1.03)';
@@ -2010,7 +2026,7 @@ document.addEventListener('touchmove', function (e) {
   }, { passive: true });
 })();
 
-// ---- カレンダー（プライベート）：アプリの中だけの1か月の予定。プライベートのタスクの期限も出す ----
+// ---- カレンダー（プライベート、カレンダー版の人は仕事でも）：アプリの中だけの1か月の予定（仕事・プライベート共通）。今の画面のタスクの期限も出す ----
 var cal = { month: ymd(new Date()).slice(0, 7), selected: ymd(new Date()), events: [], loadedKey: '' };
 var evEditing = null;   // 編集中の予定（新規なら {id: ''}）
 function calGrid(month) {   // その月を表示する6週ぶんの日付
@@ -2042,7 +2058,7 @@ function loadCal(month) {
   }).catch(function (err) { if (err.code !== 'auth') toast(err.message); });
 }
 function calTasksOn(day) {
-  return state.tasks.filter(function (t) { return t.due === day && !t.done && !t.deleted && (t.space || 'work') === 'private'; });
+  return state.tasks.filter(function (t) { return t.due === day && !t.done && !t.deleted && inSpace(t); });
 }
 function calEventsOn(day) {
   return cal.events.filter(function (e) { return e.date === day; })
@@ -2388,7 +2404,7 @@ $('quickMemo').onkeydown = function (e) {
 };
 
 // ---- つなぎ込み ----
-$('addTop').onclick = function () { openAdd(mobileMq.matches && state.active !== 'plan' ? state.active : 'now'); };
+$('addTop').onclick = function () { openAdd(mobileMq.matches && state.active !== 'plan' && state.active !== 'cal' ? state.active : 'now'); };
 $('titleBtn').onclick = function () { setSpace(state.space === 'private' ? 'work' : 'private'); };
 $('trashBtn').onclick = openTrash;
 $('mLogout').onclick = function () { closeTrash(); logout(); };
@@ -2457,7 +2473,7 @@ setInterval(function () {
 document.addEventListener('visibilitychange', function () {
   if (document.visibilityState !== 'visible' || !started || !store('mt_token')) return;
   if (pendingCount === 0 && !editing) load();
-  if (plan.date && (state.active === 'plan' || !mobileMq.matches)) loadPlan(plan.date);
+  if (!calMode() && plan.date && (state.active === 'plan' || !mobileMq.matches)) loadPlan(plan.date);
 });
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
@@ -2466,9 +2482,9 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
 
 state.active = store('mt_active') || 'now';
 state.space = store('mt_space') === 'private' ? 'private' : 'work';
-applySpaceLook();
-if (currentTabs().map(function (c) { return c.id; }).indexOf(state.active) < 0) state.active = 'now';
 state.me = storeJson('mt_me');
+applySpaceLook();
+fixActiveTab();
 state.monthly = storeJson('mt_monthly') || [];
 if (store('mt_token')) startApp(); else showLogin();
 </script>
